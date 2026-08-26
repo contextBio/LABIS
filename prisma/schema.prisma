@@ -1,0 +1,101 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LabRole {
+  PI
+  LAB_MANAGER
+  MEMBER
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String
+  image        String?
+  passwordHash String?      @map("password_hash")
+  isDeptAdmin  Boolean      @default(false) @map("is_dept_admin")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  memberships  Membership[]
+  invitesSent  Invitation[] @relation("InvitedBy")
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+model Lab {
+  id          Int          @id @default(autoincrement())
+  name        String       @unique
+  piName      String       @default("") @map("pi_name")
+  room        String       @default("")
+  status      String       @default("운영")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  memberships Membership[]
+  invitations Invitation[]
+  auditLogs   AuditLog[]
+  settings    Setting[]
+
+  @@map("labs")
+}
+
+model Membership {
+  id       Int      @id @default(autoincrement())
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId   String   @map("user_id")
+  lab      Lab      @relation(fields: [labId], references: [id], onDelete: Cascade)
+  labId    Int      @map("lab_id")
+  role     LabRole  @default(MEMBER)
+  joinedAt DateTime @default(now()) @map("joined_at")
+
+  @@unique([userId, labId])
+  @@map("memberships")
+}
+
+model Invitation {
+  id          Int       @id @default(autoincrement())
+  email       String
+  lab         Lab       @relation(fields: [labId], references: [id], onDelete: Cascade)
+  labId       Int       @map("lab_id")
+  role        LabRole   @default(MEMBER)
+  token       String    @unique @default(cuid())
+  invitedBy   User?     @relation("InvitedBy", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitedById String?   @map("invited_by_id")
+  expiresAt   DateTime  @map("expires_at")
+  acceptedAt  DateTime? @map("accepted_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@map("invitations")
+}
+
+model AuditLog {
+  id       Int      @id @default(autoincrement())
+  user     User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId   String?  @map("user_id")
+  lab      Lab?     @relation(fields: [labId], references: [id], onDelete: SetNull)
+  labId    Int?     @map("lab_id")
+  action   String
+  entity   String
+  entityId String   @default("") @map("entity_id")
+  detail   Json?
+  at       DateTime @default(now())
+
+  @@index([labId, at])
+  @@map("audit_logs")
+}
+
+model Setting {
+  id    Int    @id @default(autoincrement())
+  scope String @default("dept") // 'dept' | 'lab'
+  lab   Lab?   @relation(fields: [labId], references: [id], onDelete: Cascade)
+  labId Int?   @map("lab_id")
+  key   String
+  value String @default("")
+
+  @@unique([scope, labId, key])
+  @@map("settings")
+}
