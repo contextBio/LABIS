@@ -65,8 +65,8 @@ Setting     scope(dept|lab), lab_id?, key, value                          @@uniq
 | Phase | 내용 | 산출물 |
 |---|---|---|
 | **P0 인프라** ✅ | ~~Docker~~ → 네이티브 PG17에 `labi` 롤/DB 생성, Prisma 6 초기화, 뼈대 6테이블 마이그레이션(`init_core_skeleton`), db:migrate/deploy/studio 스크립트. HTTPS는 도메인 확정 시 Apache vhost+certbot | `prisma/schema.prisma`, `.env`, `src/lib/prisma.ts` |
-| **P1 인증** | Auth.js(Google+비번), 로그인/로그아웃, 초대 수락 가입, 첫 사용자=학과관리자 부트스트랩 | `/login`, `/invite/[token]` |
-| **P2 조직·권한** | 랩 CRUD, 구성원·역할 관리, 초대 발송(메일 링크는 복사 방식부터), 랩 전환기, guard/audit | `/admin/labs`, `/lab/members` |
+| **P1 인증** ✅ | Auth.js v5(비번, Google은 env 설정 시 자동 활성), 로그인/로그아웃, 초대 수락 가입, `/setup` 부트스트랩, `/account` 비밀번호 변경 | `/login`, `/invite/[token]`, `src/lib/auth.ts` |
+| **P2 조직·권한** ✅ | 랩 CRUD·학과관리자 지정, 구성원 역할 관리, 초대 링크(7일 유효, 복사 전달), 랩 전환기, `requireUser/requireDeptAdmin/requireLab` 가드 + 감사 로깅 | `/admin/labs`, `/lab/members`, `src/lib/guard.ts` |
 | **P3 도메인 이식** | LIMS·과제·인사 모듈을 Prisma+lab_id로 이식, 기존 SQLite 데이터 마이그레이션 스크립트 | 기존 화면 전부 랩 스코프로 동작 |
 | **P4 시트 연동 이식** | 구글시트 동기화를 랩별 설정(시트 ID·서비스계정)으로 전환 | `/sync` 랩별 동작 |
 
