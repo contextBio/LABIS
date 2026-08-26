@@ -1,16 +1,18 @@
-import { getSetting, loadServiceAccount } from "@/lib/google";
+import { requireLab } from "@/lib/guard";
+import { getLabSetting, loadServiceAccount } from "@/lib/google";
 import { TABS } from "@/lib/sheetSync";
 import { saveSpreadsheet, runExport, runImport } from "@/lib/syncActions";
 import { PageHeader, Section } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
-export default function SyncPage() {
-  const spreadsheetId = getSetting("spreadsheet_id");
+export default async function SyncPage() {
+  const ctx = await requireLab("LAB_MANAGER");
+  const spreadsheetId = await getLabSetting(ctx.labId, "spreadsheet_id");
   const sa = loadServiceAccount();
   let log: { at: string; lines: string[] } | null = null;
   try {
-    const raw = getSetting("sync_log");
+    const raw = await getLabSetting(ctx.labId, "sync_log");
     if (raw) log = JSON.parse(raw);
   } catch {
     log = null;
@@ -18,7 +20,10 @@ export default function SyncPage() {
 
   return (
     <div>
-      <PageHeader title="구글시트 연동" desc="구글 스프레드시트로 자료 가져오기 · 내보내기" />
+      <PageHeader
+        title={`구글시트 연동 — ${ctx.labName}`}
+        desc="이 랩의 자료를 구글 스프레드시트로 가져오기 · 내보내기"
+      />
 
       <Section title="연결 상태">
         <div className="mb-4 space-y-2 text-sm">
@@ -34,7 +39,7 @@ export default function SyncPage() {
                 {spreadsheetId}
               </a>
             ) : (
-              <span className="text-amber-600">미설정</span>
+              <span className="text-amber-600">미설정 — 랩마다 별도 시트를 사용합니다</span>
             )}
           </div>
           <div>
@@ -73,7 +78,7 @@ export default function SyncPage() {
           </form>
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {TABS.map((t) => (
+          {TABS.filter((t) => t !== "인원").map((t) => (
             <form key={t} action={runImport} className="inline">
               <input type="hidden" name="tab" value={t} />
               <button className="btn-ghost">⬇ {t}</button>
@@ -81,8 +86,9 @@ export default function SyncPage() {
           ))}
         </div>
         <p className="mt-3 text-xs text-slate-400">
-          가져오기 방식 — 인원·과제·시료·실험·장비: 키(이름/번호) 기준 <b>갱신/추가</b> ·{" "}
-          참여연구원·마일스톤·예산집행·휴가: 탭 내용으로 <b>전체 교체</b>
+          가져오기 방식 — 과제·시료·실험·장비: 키(번호/시리얼) 기준 <b>갱신/추가</b> ·{" "}
+          참여연구원·마일스톤·예산집행·휴가: 탭 내용으로 <b>전체 교체</b> ·{" "}
+          인원: 계정과 결합되어 있어 <b>내보내기 전용</b> (구성원 추가는 초대로)
         </p>
       </Section>
 
@@ -104,7 +110,7 @@ export default function SyncPage() {
           데이터로 모든 탭이 자동 생성되므로, 그 양식 위에서 수정하는 방법을 권장합니다.
         </p>
         <ul className="grid gap-1 text-xs text-slate-500 md:grid-cols-2">
-          <li><b>인원</b> — 이름, 직급, 부서, 이메일, 연락처, 입사일, 상태</li>
+          <li><b>인원</b> (내보내기 전용) — 이름, 직급, 랩역할, 이메일, 연락처, 입사일, 상태</li>
           <li><b>과제</b> — 과제번호, 과제명, 발주처, 사업명, 연구책임자, 시작일, 종료일, 총연구비, 상태, 비고</li>
           <li><b>참여연구원</b> — 과제번호, 이름, 역할, 참여율</li>
           <li><b>마일스톤</b> — 과제번호, 내용, 기한, 상태, 비고</li>

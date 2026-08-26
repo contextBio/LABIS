@@ -51,13 +51,24 @@ export default async function InvitePage({
             )}
             <form action={acceptInviteAction} className="space-y-3">
               <input type="hidden" name="token" value={token} />
-              {existingUser ? (
+              {existingUser && existingUser.passwordHash ? (
                 <p className="rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-700">
                   기존 계정({existingUser.name})에 랩 소속이 추가됩니다.
                 </p>
               ) : (
                 <>
-                  <input name="name" required placeholder="이름" className="inp" />
+                  {existingUser && (
+                    <p className="rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-700">
+                      등록된 프로필({existingUser.name})에 로그인 비밀번호를 설정합니다.
+                    </p>
+                  )}
+                  <input
+                    name="name"
+                    required={!existingUser}
+                    defaultValue={existingUser?.name ?? ""}
+                    placeholder="이름"
+                    className="inp"
+                  />
                   <input
                     name="password"
                     type="password"

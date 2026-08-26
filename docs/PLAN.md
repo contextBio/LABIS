@@ -67,8 +67,19 @@ Setting     scope(dept|lab), lab_id?, key, value                          @@uniq
 | **P0 인프라** ✅ | ~~Docker~~ → 네이티브 PG17에 `labi` 롤/DB 생성, Prisma 6 초기화, 뼈대 6테이블 마이그레이션(`init_core_skeleton`), db:migrate/deploy/studio 스크립트. HTTPS는 도메인 확정 시 Apache vhost+certbot | `prisma/schema.prisma`, `.env`, `src/lib/prisma.ts` |
 | **P1 인증** ✅ | Auth.js v5(비번, Google은 env 설정 시 자동 활성), 로그인/로그아웃, 초대 수락 가입, `/setup` 부트스트랩, `/account` 비밀번호 변경 | `/login`, `/invite/[token]`, `src/lib/auth.ts` |
 | **P2 조직·권한** ✅ | 랩 CRUD·학과관리자 지정, 구성원 역할 관리, 초대 링크(7일 유효, 복사 전달), 랩 전환기, `requireUser/requireDeptAdmin/requireLab` 가드 + 감사 로깅 | `/admin/labs`, `/lab/members`, `src/lib/guard.ts` |
-| **P3 도메인 이식** | LIMS·과제·인사 모듈을 Prisma+lab_id로 이식, 기존 SQLite 데이터 마이그레이션 스크립트 | 기존 화면 전부 랩 스코프로 동작 |
-| **P4 시트 연동 이식** | 구글시트 동기화를 랩별 설정(시트 ID·서비스계정)으로 전환 | `/sync` 랩별 동작 |
+| **P3 도메인 이식** ✅ | LIMS·과제·인사 모듈 Prisma+lab_id 이식 완료, SQLite 데이터 랩2로 이관(scripts/migrate-sqlite.ts), 역할별 UI 노출(쓰기 폼은 매니저+) | 기존 화면 전부 랩 스코프로 동작 |
+| **P4 시트 연동 이식** ✅ | 랩별 스프레드시트 설정(Setting), 인원 탭은 내보내기 전용으로 전환 | `/sync` 랩별 동작 |
+
+### 접속 도메인 관련 (2026-08-27 미결)
+
+요청된 `contextbio.ai/labi`는 **contextbio.ai DNS가 Firebase Hosting(199.36.158.100)을 가리키고 있어**
+이 서버(203.230.6.178)에서 직접 서빙 불가. 선택지:
+1. **labi.contextbio.ai 서브도메인** (권장) — DNS A 레코드만 추가하면 Apache vhost+certbot로 즉시 연결
+2. contextbio.ai/labi 경로 유지 — Firebase 쪽에서 /labi 리버스 프록시 구성 필요 (Cloud Run 경유 등, 복잡)
+3. labi.sysmed.kr — 이 서버의 기존 도메인 체계 활용
+
+### 운영 메모
+- 서버 Node: /opt/node (v24). 이전에 쓰던 ~/.local의 Node 22가 삭제되어 있어 전역 버전으로 표준화함.
 
 P0–P2가 "공통 뼈대". P0+P1 → P2 순서로 각각 검증 후 진행.
 

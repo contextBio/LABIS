@@ -1,8 +1,9 @@
 "use server";
 
-import { getDb } from "@/db";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { prisma } from "./prisma";
+import { requireLab, audit } from "./guard";
 
 function s(fd: FormData, key: string): string {
   return String(fd.get(key) ?? "").trim();
@@ -11,217 +12,333 @@ function n(fd: FormData, key: string): number {
   const v = Number(fd.get(key) ?? 0);
   return Number.isFinite(v) ? v : 0;
 }
-function nullableId(fd: FormData, key: string): number | null {
+function nid(fd: FormData, key: string): number | null {
   const v = s(fd, key);
   return v ? Number(v) : null;
+}
+function sid(fd: FormData, key: string): string | null {
+  const v = s(fd, key);
+  return v || null;
+}
+const today = () => new Date().toISOString().slice(0, 10);
+
+/** 해당 유저가 이 랩 소속인지 확인 (외부 id 주입 방지) */
+async function assertLabUser(labId: number, userId: string | null) {
+  if (!userId) return null;
+  const m = await prisma.membership.findFirst({ where: { labId, userId } });
+  return m ? userId : null;
 }
 
 // ---------- 인사관리 ----------
 
-export async function createMember(fd: FormData) {
-  getDb()
-    .prepare(
-      "INSERT INTO members (name, position, department, email, phone, hire_date, status) VALUES (?,?,?,?,?,?,?)"
-    )
-    .run(
-      s(fd, "name"), s(fd, "position") || "연구원", s(fd, "department"),
-      s(fd, "email"), s(fd, "phone"), s(fd, "hire_date") || new Date().toISOString().slice(0, 10),
-      s(fd, "status") || "재직"
-    );
-  revalidatePath("/hr");
-}
-
-export async function updateMemberStatus(fd: FormData) {
-  getDb().prepare("UPDATE members SET status=? WHERE id=?").run(s(fd, "status"), n(fd, "id"));
-  revalidatePath("/hr");
-}
-
-export async function deleteMember(fd: FormData) {
-  getDb().prepare("DELETE FROM members WHERE id=?").run(n(fd, "id"));
+export async function updateProfile(fd: FormData) {
+  const ctx = await requireLab("LAB_MANAGER");
+  const userId = s(fd, "user_id");
+  if (!(await assertLabUser(ctx.labId, userId))) return;
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      position: s(fd, "position") || "연구원",
+      phone: s(fd, "phone"),
+      hireDate: s(fd, "hire_date"),
+      workStatus: s(fd, "work_status") || "재직",
+    },
+  });
+  await audit(ctx.user.id, ctx.labId, "hr.profile_update", "user", userId);
   revalidatePath("/hr");
 }
 
 export async function createLeave(fd: FormData) {
-  getDb()
-    .prepare(
-      "INSERT INTO leaves (member_id, type, start_date, end_date, days, reason, status) VALUES (?,?,?,?,?,?,?)"
-    )
-    .run(
-      n(fd, "member_id"), s(fd, "type") || "연차", s(fd, "start_date"),
-      s(fd, "end_date") || s(fd, "start_date"), n(fd, "days") || 1, s(fd, "reason"), "신청"
-    );
+  const ctx = await requireLab();
+  // 일반 구성원은 본인 휴가만 신청, 매니저 이상은 대리 신청 가능
+  let userId = s(fd, "user_id") || ctx.user.id;
+  if (ctx.role === "MEMBER") userId = ctx.user.id;
+  if (!(await assertLabUser(ctx.labId, userId))) return;
+  await prisma.leave.create({
+    data: {
+      labId: ctx.labId,
+      userId,
+      type: s(fd, "type") || "연차",
+      startDate: s(fd, "start_date"),
+      endDate: s(fd, "end_date") || s(fd, "start_date"),
+      days: n(fd, "days") || 1,
+      reason: s(fd, "reason"),
+    },
+  });
   revalidatePath("/hr");
 }
 
 export async function setLeaveStatus(fd: FormData) {
-  getDb().prepare("UPDATE leaves SET status=? WHERE id=?").run(s(fd, "status"), n(fd, "id"));
+  const ctx = await requireLab("LAB_MANAGER");
+  const id = n(fd, "id");
+  const status = s(fd, "status");
+  await prisma.leave.updateMany({ where: { id, labId: ctx.labId }, data: { status } });
+  await audit(ctx.user.id, ctx.labId, "hr.leave_status", "leave", id, { status });
   revalidatePath("/hr");
 }
 
 // ---------- 과제관리 ----------
 
 export async function createProject(fd: FormData) {
-  const info = getDb()
-    .prepare(
-      "INSERT INTO projects (code, title, sponsor, program, pi_id, start_date, end_date, total_budget, status, memo) VALUES (?,?,?,?,?,?,?,?,?,?)"
-    )
-    .run(
-      s(fd, "code"), s(fd, "title"), s(fd, "sponsor"), s(fd, "program"),
-      nullableId(fd, "pi_id"), s(fd, "start_date"), s(fd, "end_date"),
-      n(fd, "total_budget"), s(fd, "status") || "진행", s(fd, "memo")
-    );
+  const ctx = await requireLab("LAB_MANAGER");
+  const piId = await assertLabUser(ctx.labId, sid(fd, "pi_id"));
+  const project = await prisma.project.create({
+    data: {
+      labId: ctx.labId,
+      code: s(fd, "code"),
+      title: s(fd, "title"),
+      sponsor: s(fd, "sponsor"),
+      program: s(fd, "program"),
+      piId,
+      startDate: s(fd, "start_date"),
+      endDate: s(fd, "end_date"),
+      totalBudget: n(fd, "total_budget"),
+      status: s(fd, "status") || "진행",
+      memo: s(fd, "memo"),
+    },
+  });
+  await audit(ctx.user.id, ctx.labId, "project.create", "project", project.id, {
+    code: project.code,
+  });
   revalidatePath("/projects");
-  redirect(`/projects/${info.lastInsertRowid}`);
+  redirect(`/projects/${project.id}`);
 }
 
 export async function updateProjectStatus(fd: FormData) {
-  getDb().prepare("UPDATE projects SET status=? WHERE id=?").run(s(fd, "status"), n(fd, "id"));
+  const ctx = await requireLab("LAB_MANAGER");
+  const id = n(fd, "id");
+  const status = s(fd, "status");
+  await prisma.project.updateMany({ where: { id, labId: ctx.labId }, data: { status } });
+  await audit(ctx.user.id, ctx.labId, "project.status", "project", id, { status });
   revalidatePath("/projects");
-  revalidatePath(`/projects/${n(fd, "id")}`);
+  revalidatePath(`/projects/${id}`);
 }
 
 export async function deleteProject(fd: FormData) {
-  getDb().prepare("DELETE FROM projects WHERE id=?").run(n(fd, "id"));
+  const ctx = await requireLab("PI");
+  const id = n(fd, "id");
+  await prisma.project.deleteMany({ where: { id, labId: ctx.labId } });
+  await audit(ctx.user.id, ctx.labId, "project.delete", "project", id);
   revalidatePath("/projects");
   redirect("/projects");
 }
 
+async function assertLabProject(labId: number, projectId: number) {
+  const p = await prisma.project.findFirst({ where: { id: projectId, labId } });
+  return p ? p.id : null;
+}
+
 export async function addProjectMember(fd: FormData) {
-  const pid = n(fd, "project_id");
-  getDb()
-    .prepare(
-      "INSERT INTO project_members (project_id, member_id, role, effort_pct) VALUES (?,?,?,?) ON CONFLICT(project_id, member_id) DO UPDATE SET role=excluded.role, effort_pct=excluded.effort_pct"
-    )
-    .run(pid, n(fd, "member_id"), s(fd, "role") || "참여연구원", n(fd, "effort_pct"));
-  revalidatePath(`/projects/${pid}`);
+  const ctx = await requireLab("LAB_MANAGER");
+  const projectId = await assertLabProject(ctx.labId, n(fd, "project_id"));
+  const userId = await assertLabUser(ctx.labId, sid(fd, "user_id"));
+  if (!projectId || !userId) return;
+  await prisma.projectMember.upsert({
+    where: { projectId_userId: { projectId, userId } },
+    create: {
+      projectId,
+      userId,
+      role: s(fd, "role") || "참여연구원",
+      effortPct: n(fd, "effort_pct"),
+    },
+    update: { role: s(fd, "role") || "참여연구원", effortPct: n(fd, "effort_pct") },
+  });
+  revalidatePath(`/projects/${projectId}`);
 }
 
 export async function removeProjectMember(fd: FormData) {
-  getDb().prepare("DELETE FROM project_members WHERE id=?").run(n(fd, "id"));
+  const ctx = await requireLab("LAB_MANAGER");
+  const id = n(fd, "id");
+  await prisma.projectMember.deleteMany({ where: { id, project: { labId: ctx.labId } } });
   revalidatePath(`/projects/${n(fd, "project_id")}`);
 }
 
 export async function addMilestone(fd: FormData) {
-  const pid = n(fd, "project_id");
-  getDb()
-    .prepare("INSERT INTO milestones (project_id, title, due_date, status, memo) VALUES (?,?,?,?,?)")
-    .run(pid, s(fd, "title"), s(fd, "due_date"), s(fd, "status") || "예정", s(fd, "memo"));
-  revalidatePath(`/projects/${pid}`);
+  const ctx = await requireLab("LAB_MANAGER");
+  const projectId = await assertLabProject(ctx.labId, n(fd, "project_id"));
+  if (!projectId) return;
+  await prisma.milestone.create({
+    data: {
+      projectId,
+      title: s(fd, "title"),
+      dueDate: s(fd, "due_date"),
+      status: s(fd, "status") || "예정",
+      memo: s(fd, "memo"),
+    },
+  });
+  revalidatePath(`/projects/${projectId}`);
 }
 
 export async function setMilestoneStatus(fd: FormData) {
-  getDb().prepare("UPDATE milestones SET status=? WHERE id=?").run(s(fd, "status"), n(fd, "id"));
+  const ctx = await requireLab("LAB_MANAGER");
+  await prisma.milestone.updateMany({
+    where: { id: n(fd, "id"), project: { labId: ctx.labId } },
+    data: { status: s(fd, "status") },
+  });
   revalidatePath(`/projects/${n(fd, "project_id")}`);
 }
 
 export async function deleteMilestone(fd: FormData) {
-  getDb().prepare("DELETE FROM milestones WHERE id=?").run(n(fd, "id"));
+  const ctx = await requireLab("LAB_MANAGER");
+  await prisma.milestone.deleteMany({
+    where: { id: n(fd, "id"), project: { labId: ctx.labId } },
+  });
   revalidatePath(`/projects/${n(fd, "project_id")}`);
 }
 
 export async function addBudgetItem(fd: FormData) {
-  const pid = n(fd, "project_id");
-  getDb()
-    .prepare(
-      "INSERT INTO budget_items (project_id, category, item, amount, spent_date, memo) VALUES (?,?,?,?,?,?)"
-    )
-    .run(
-      pid, s(fd, "category") || "기타", s(fd, "item"), n(fd, "amount"),
-      s(fd, "spent_date") || new Date().toISOString().slice(0, 10), s(fd, "memo")
-    );
-  revalidatePath(`/projects/${pid}`);
+  const ctx = await requireLab("LAB_MANAGER");
+  const projectId = await assertLabProject(ctx.labId, n(fd, "project_id"));
+  if (!projectId) return;
+  const item = await prisma.budgetItem.create({
+    data: {
+      projectId,
+      category: s(fd, "category") || "기타",
+      item: s(fd, "item"),
+      amount: n(fd, "amount"),
+      spentDate: s(fd, "spent_date") || today(),
+      memo: s(fd, "memo"),
+    },
+  });
+  await audit(ctx.user.id, ctx.labId, "budget.add", "budget_item", item.id, {
+    amount: item.amount,
+  });
+  revalidatePath(`/projects/${projectId}`);
 }
 
 export async function deleteBudgetItem(fd: FormData) {
-  getDb().prepare("DELETE FROM budget_items WHERE id=?").run(n(fd, "id"));
+  const ctx = await requireLab("LAB_MANAGER");
+  const id = n(fd, "id");
+  await prisma.budgetItem.deleteMany({ where: { id, project: { labId: ctx.labId } } });
+  await audit(ctx.user.id, ctx.labId, "budget.delete", "budget_item", id);
   revalidatePath(`/projects/${n(fd, "project_id")}`);
 }
 
 // ---------- LIMS ----------
 
 export async function createSample(fd: FormData) {
-  getDb()
-    .prepare(
-      "INSERT INTO samples (code, name, type, source, project_id, owner_id, storage_location, received_date, status, memo) VALUES (?,?,?,?,?,?,?,?,?,?)"
-    )
-    .run(
-      s(fd, "code"), s(fd, "name"), s(fd, "type") || "기타", s(fd, "source"),
-      nullableId(fd, "project_id"), nullableId(fd, "owner_id"), s(fd, "storage_location"),
-      s(fd, "received_date") || new Date().toISOString().slice(0, 10),
-      s(fd, "status") || "보관", s(fd, "memo")
-    );
+  const ctx = await requireLab();
+  await prisma.sample.create({
+    data: {
+      labId: ctx.labId,
+      code: s(fd, "code"),
+      name: s(fd, "name"),
+      type: s(fd, "type") || "기타",
+      source: s(fd, "source"),
+      projectId: await assertLabProject(ctx.labId, n(fd, "project_id")).then((v) => v ?? null),
+      ownerId: await assertLabUser(ctx.labId, sid(fd, "owner_id")),
+      storageLocation: s(fd, "storage_location"),
+      receivedDate: s(fd, "received_date") || today(),
+      status: s(fd, "status") || "보관",
+      memo: s(fd, "memo"),
+    },
+  });
   revalidatePath("/lims/samples");
 }
 
 export async function setSampleStatus(fd: FormData) {
-  getDb().prepare("UPDATE samples SET status=? WHERE id=?").run(s(fd, "status"), n(fd, "id"));
+  const ctx = await requireLab();
+  await prisma.sample.updateMany({
+    where: { id: n(fd, "id"), labId: ctx.labId },
+    data: { status: s(fd, "status") },
+  });
   revalidatePath("/lims/samples");
 }
 
 export async function deleteSample(fd: FormData) {
-  getDb().prepare("DELETE FROM samples WHERE id=?").run(n(fd, "id"));
+  const ctx = await requireLab("LAB_MANAGER");
+  await prisma.sample.deleteMany({ where: { id: n(fd, "id"), labId: ctx.labId } });
   revalidatePath("/lims/samples");
 }
 
 export async function createExperiment(fd: FormData) {
-  getDb()
-    .prepare(
-      "INSERT INTO experiments (code, title, project_id, sample_id, assignee_id, protocol, start_date, status, result_summary) VALUES (?,?,?,?,?,?,?,?,?)"
-    )
-    .run(
-      s(fd, "code"), s(fd, "title"), nullableId(fd, "project_id"), nullableId(fd, "sample_id"),
-      nullableId(fd, "assignee_id"), s(fd, "protocol"),
-      s(fd, "start_date") || new Date().toISOString().slice(0, 10),
-      s(fd, "status") || "계획", s(fd, "result_summary")
-    );
+  const ctx = await requireLab();
+  const sampleId = nid(fd, "sample_id");
+  const validSample = sampleId
+    ? await prisma.sample.findFirst({ where: { id: sampleId, labId: ctx.labId } })
+    : null;
+  await prisma.experiment.create({
+    data: {
+      labId: ctx.labId,
+      code: s(fd, "code"),
+      title: s(fd, "title"),
+      projectId: await assertLabProject(ctx.labId, n(fd, "project_id")).then((v) => v ?? null),
+      sampleId: validSample?.id ?? null,
+      assigneeId: await assertLabUser(ctx.labId, sid(fd, "assignee_id")),
+      protocol: s(fd, "protocol"),
+      startDate: s(fd, "start_date") || today(),
+      status: s(fd, "status") || "계획",
+      resultSummary: s(fd, "result_summary"),
+    },
+  });
   revalidatePath("/lims/experiments");
 }
 
 export async function setExperimentStatus(fd: FormData) {
+  const ctx = await requireLab();
+  const id = n(fd, "id");
   const status = s(fd, "status");
-  const db = getDb();
-  if (status === "완료") {
-    db.prepare("UPDATE experiments SET status=?, end_date=COALESCE(end_date, date('now')) WHERE id=?")
-      .run(status, n(fd, "id"));
-  } else {
-    db.prepare("UPDATE experiments SET status=? WHERE id=?").run(status, n(fd, "id"));
-  }
+  const exp = await prisma.experiment.findFirst({ where: { id, labId: ctx.labId } });
+  if (!exp) return;
+  await prisma.experiment.update({
+    where: { id },
+    data: { status, endDate: status === "완료" ? (exp.endDate ?? today()) : exp.endDate },
+  });
   revalidatePath("/lims/experiments");
 }
 
 export async function deleteExperiment(fd: FormData) {
-  getDb().prepare("DELETE FROM experiments WHERE id=?").run(n(fd, "id"));
+  const ctx = await requireLab("LAB_MANAGER");
+  await prisma.experiment.deleteMany({ where: { id: n(fd, "id"), labId: ctx.labId } });
   revalidatePath("/lims/experiments");
 }
 
 export async function createInstrument(fd: FormData) {
-  getDb()
-    .prepare(
-      "INSERT INTO instruments (name, model, serial_no, manager_id, location, purchase_date, last_check_date, next_check_date, status, memo) VALUES (?,?,?,?,?,?,?,?,?,?)"
-    )
-    .run(
-      s(fd, "name"), s(fd, "model"), s(fd, "serial_no"), nullableId(fd, "manager_id"),
-      s(fd, "location"), s(fd, "purchase_date") || null, s(fd, "last_check_date") || null,
-      s(fd, "next_check_date") || null, s(fd, "status") || "정상", s(fd, "memo")
-    );
+  const ctx = await requireLab("LAB_MANAGER");
+  await prisma.instrument.create({
+    data: {
+      labId: ctx.labId,
+      name: s(fd, "name"),
+      model: s(fd, "model"),
+      serialNo: s(fd, "serial_no"),
+      managerId: await assertLabUser(ctx.labId, sid(fd, "manager_id")),
+      location: s(fd, "location"),
+      purchaseDate: s(fd, "purchase_date") || null,
+      lastCheckDate: s(fd, "last_check_date") || null,
+      nextCheckDate: s(fd, "next_check_date") || null,
+      status: s(fd, "status") || "정상",
+      memo: s(fd, "memo"),
+    },
+  });
   revalidatePath("/lims/instruments");
 }
 
 export async function setInstrumentStatus(fd: FormData) {
-  getDb().prepare("UPDATE instruments SET status=? WHERE id=?").run(s(fd, "status"), n(fd, "id"));
+  const ctx = await requireLab();
+  await prisma.instrument.updateMany({
+    where: { id: n(fd, "id"), labId: ctx.labId },
+    data: { status: s(fd, "status") },
+  });
   revalidatePath("/lims/instruments");
 }
 
 export async function markInstrumentChecked(fd: FormData) {
-  getDb()
-    .prepare(
-      "UPDATE instruments SET last_check_date=date('now'), next_check_date=date('now','+6 months'), status='정상' WHERE id=?"
-    )
-    .run(n(fd, "id"));
+  const ctx = await requireLab();
+  const next = new Date();
+  next.setMonth(next.getMonth() + 6);
+  await prisma.instrument.updateMany({
+    where: { id: n(fd, "id"), labId: ctx.labId },
+    data: {
+      lastCheckDate: today(),
+      nextCheckDate: next.toISOString().slice(0, 10),
+      status: "정상",
+    },
+  });
   revalidatePath("/lims/instruments");
 }
 
 export async function deleteInstrument(fd: FormData) {
-  getDb().prepare("DELETE FROM instruments WHERE id=?").run(n(fd, "id"));
+  const ctx = await requireLab("LAB_MANAGER");
+  await prisma.instrument.deleteMany({ where: { id: n(fd, "id"), labId: ctx.labId } });
   revalidatePath("/lims/instruments");
 }

@@ -1,18 +1,23 @@
 import Link from "next/link";
+import { requireLab } from "@/lib/guard";
 import { dashboardStats, upcomingMilestones, recentExperiments, listProjects } from "@/lib/queries";
 import { Badge, PageHeader, Section, StatCard, won } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
-export default function Dashboard() {
-  const stats = dashboardStats();
-  const milestones = upcomingMilestones();
-  const experiments = recentExperiments();
-  const projects = listProjects().filter((p) => p.status === "진행").slice(0, 5);
+export default async function Dashboard() {
+  const ctx = await requireLab();
+  const [stats, milestones, experiments, allProjects] = await Promise.all([
+    dashboardStats(ctx.labId),
+    upcomingMilestones(ctx.labId),
+    recentExperiments(ctx.labId),
+    listProjects(ctx.labId),
+  ]);
+  const projects = allProjects.filter((p) => p.status === "진행").slice(0, 5);
 
   return (
     <div>
-      <PageHeader title="대시보드" desc="연구소 운영 현황 한눈에 보기" />
+      <PageHeader title={`대시보드 — ${ctx.labName}`} desc="연구실 운영 현황 한눈에 보기" />
 
       <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="진행 중 과제" value={`${stats.activeProjects}건`} href="/projects" />
@@ -33,9 +38,9 @@ export default function Dashboard() {
             <tbody>
               {milestones.map((ms) => (
                 <tr key={ms.id}>
-                  <td className="whitespace-nowrap font-mono text-xs">{ms.due_date}</td>
+                  <td className="whitespace-nowrap font-mono text-xs">{ms.dueDate}</td>
                   <td className="whitespace-nowrap text-xs text-slate-500">
-                    <Link href={`/projects/${ms.project_id}`} className="hover:text-sky-600">{ms.project_code}</Link>
+                    <Link href={`/projects/${ms.project.id}`} className="hover:text-sky-600">{ms.project.code}</Link>
                   </td>
                   <td>{ms.title}</td>
                   <td><Badge value={ms.status} /></td>
@@ -58,7 +63,7 @@ export default function Dashboard() {
                 <tr key={e.id}>
                   <td className="whitespace-nowrap font-mono text-xs">{e.code}</td>
                   <td>{e.title}</td>
-                  <td className="whitespace-nowrap">{e.assignee_name ?? "-"}</td>
+                  <td className="whitespace-nowrap">{e.assignee?.name ?? "-"}</td>
                   <td><Badge value={e.status} /></td>
                 </tr>
               ))}
@@ -77,15 +82,15 @@ export default function Dashboard() {
           </thead>
           <tbody>
             {projects.map((p) => {
-              const pct = p.total_budget > 0 ? Math.min(100, Math.round((p.spent / p.total_budget) * 100)) : 0;
+              const pct = p.totalBudget > 0 ? Math.min(100, Math.round((p.spent / p.totalBudget) * 100)) : 0;
               return (
                 <tr key={p.id}>
                   <td className="whitespace-nowrap font-mono text-xs">
                     <Link href={`/projects/${p.id}`} className="text-sky-600 hover:underline">{p.code}</Link>
                   </td>
                   <td>{p.title}</td>
-                  <td className="whitespace-nowrap">{p.pi_name ?? "-"}</td>
-                  <td className="whitespace-nowrap text-xs text-slate-500">{p.start_date} ~ {p.end_date}</td>
+                  <td className="whitespace-nowrap">{p.piName ?? "-"}</td>
+                  <td className="whitespace-nowrap text-xs text-slate-500">{p.startDate} ~ {p.endDate}</td>
                   <td className="w-48">
                     <div className="flex items-center gap-2">
                       <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">

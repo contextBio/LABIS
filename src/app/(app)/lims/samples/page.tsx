@@ -1,18 +1,24 @@
 import Link from "next/link";
-import { listSamples, listProjects, listMembers } from "@/lib/queries";
+import { requireLab } from "@/lib/guard";
+import { listSamples, listProjects, listLabUsers } from "@/lib/queries";
 import { createSample, setSampleStatus, deleteSample } from "@/lib/actions";
 import { Badge, PageHeader, Section } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
-export default function SamplesPage() {
-  const samples = listSamples();
-  const projects = listProjects();
-  const members = listMembers().filter((m) => m.status === "재직");
+export default async function SamplesPage() {
+  const ctx = await requireLab();
+  const [samples, projects, users] = await Promise.all([
+    listSamples(ctx.labId),
+    listProjects(ctx.labId),
+    listLabUsers(ctx.labId),
+  ]);
+  const active = users.filter((u) => u.workStatus === "재직");
+  const canDelete = ctx.role === "PI" || ctx.role === "LAB_MANAGER";
 
   return (
     <div>
-      <PageHeader title="시료 관리 (LIMS)" desc="시료 등록 · 보관 위치 · 상태 추적" />
+      <PageHeader title={`시료 관리 (LIMS) — ${ctx.labName}`} desc="시료 등록 · 보관 위치 · 상태 추적" />
 
       <Section title={`시료 목록 (${samples.length}건)`}>
         <div className="overflow-x-auto">
@@ -28,13 +34,13 @@ export default function SamplesPage() {
                   <td><span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{sp.type}</span></td>
                   <td className="text-xs text-slate-500">{sp.source}</td>
                   <td className="whitespace-nowrap font-mono text-xs">
-                    {sp.project_id ? (
-                      <Link href={`/projects/${sp.project_id}`} className="text-sky-600 hover:underline">{sp.project_code}</Link>
+                    {sp.project ? (
+                      <Link href={`/projects/${sp.project.id}`} className="text-sky-600 hover:underline">{sp.project.code}</Link>
                     ) : "-"}
                   </td>
-                  <td className="whitespace-nowrap">{sp.owner_name ?? "-"}</td>
-                  <td className="text-xs">{sp.storage_location}</td>
-                  <td className="whitespace-nowrap font-mono text-xs">{sp.received_date}</td>
+                  <td className="whitespace-nowrap">{sp.owner?.name ?? "-"}</td>
+                  <td className="text-xs">{sp.storageLocation}</td>
+                  <td className="whitespace-nowrap font-mono text-xs">{sp.receivedDate}</td>
                   <td><Badge value={sp.status} /></td>
                   <td className="whitespace-nowrap text-right">
                     <form action={setSampleStatus} className="inline-flex items-center gap-1">
@@ -43,11 +49,16 @@ export default function SamplesPage() {
                         <option>보관</option><option>사용중</option><option>소진</option><option>폐기</option>
                       </select>
                       <button className="btn-ghost">변경</button>
-                    </form>{" "}
-                    <form action={deleteSample} className="inline">
-                      <input type="hidden" name="id" value={sp.id} />
-                      <button className="btn-danger">삭제</button>
                     </form>
+                    {canDelete && (
+                      <>
+                        {" "}
+                        <form action={deleteSample} className="inline">
+                          <input type="hidden" name="id" value={sp.id} />
+                          <button className="btn-danger">삭제</button>
+                        </form>
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -75,8 +86,8 @@ export default function SamplesPage() {
           </select>
           <select name="owner_id" className="inp">
             <option value="">담당자 선택</option>
-            {members.map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
+            {active.map((u) => (
+              <option key={u.userId} value={u.userId}>{u.name}</option>
             ))}
           </select>
           <input name="storage_location" placeholder="보관 위치 (예: 냉동고 A-2-13)" className="inp" />

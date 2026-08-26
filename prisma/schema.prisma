@@ -20,10 +20,21 @@ model User {
   image        String?
   passwordHash String?      @map("password_hash")
   isDeptAdmin  Boolean      @default(false) @map("is_dept_admin")
+  // 인사 프로필
+  position     String       @default("연구원")
+  phone        String       @default("")
+  hireDate     String       @default("") @map("hire_date")
+  workStatus   String       @default("재직") @map("work_status")
   createdAt    DateTime     @default(now()) @map("created_at")
   memberships  Membership[]
   invitesSent  Invitation[] @relation("InvitedBy")
   auditLogs    AuditLog[]
+  piProjects     Project[]       @relation("ProjectPI")
+  projectMembers ProjectMember[]
+  samples        Sample[]
+  experiments    Experiment[]
+  instruments    Instrument[]
+  leaves         Leave[]
 
   @@map("users")
 }
@@ -39,6 +50,11 @@ model Lab {
   invitations Invitation[]
   auditLogs   AuditLog[]
   settings    Setting[]
+  projects    Project[]
+  samples     Sample[]
+  experiments Experiment[]
+  instruments Instrument[]
+  leaves      Leave[]
 
   @@map("labs")
 }
@@ -86,6 +102,160 @@ model AuditLog {
 
   @@index([labId, at])
   @@map("audit_logs")
+}
+
+// ---------- 도메인: 과제관리 ----------
+// 날짜는 UI(date input)와 시트 연동에 맞춰 'YYYY-MM-DD' 문자열로 저장한다.
+
+model Project {
+  id          Int             @id @default(autoincrement())
+  lab         Lab             @relation(fields: [labId], references: [id], onDelete: Cascade)
+  labId       Int             @map("lab_id")
+  code        String
+  title       String
+  sponsor     String          @default("")
+  program     String          @default("")
+  pi          User?           @relation("ProjectPI", fields: [piId], references: [id], onDelete: SetNull)
+  piId        String?         @map("pi_id")
+  startDate   String          @default("") @map("start_date")
+  endDate     String          @default("") @map("end_date")
+  totalBudget Int             @default(0) @map("total_budget")
+  status      String          @default("진행")
+  memo        String          @default("")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  members     ProjectMember[]
+  milestones  Milestone[]
+  budgetItems BudgetItem[]
+  samples     Sample[]
+  experiments Experiment[]
+
+  @@unique([labId, code])
+  @@map("projects")
+}
+
+model ProjectMember {
+  id        Int     @id @default(autoincrement())
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId Int     @map("project_id")
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String  @map("user_id")
+  role      String  @default("참여연구원")
+  effortPct Int     @default(0) @map("effort_pct")
+
+  @@unique([projectId, userId])
+  @@map("project_members")
+}
+
+model Milestone {
+  id        Int     @id @default(autoincrement())
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId Int     @map("project_id")
+  title     String
+  dueDate   String  @map("due_date")
+  status    String  @default("예정")
+  memo      String  @default("")
+
+  @@map("milestones")
+}
+
+model BudgetItem {
+  id        Int     @id @default(autoincrement())
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId Int     @map("project_id")
+  category  String  @default("기타")
+  item      String
+  amount    Int     @default(0)
+  spentDate String  @default("") @map("spent_date")
+  memo      String  @default("")
+
+  @@map("budget_items")
+}
+
+// ---------- 도메인: LIMS ----------
+
+model Sample {
+  id              Int          @id @default(autoincrement())
+  lab             Lab          @relation(fields: [labId], references: [id], onDelete: Cascade)
+  labId           Int          @map("lab_id")
+  code            String
+  name            String
+  type            String       @default("기타")
+  source          String       @default("")
+  project         Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId       Int?         @map("project_id")
+  owner           User?        @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  ownerId         String?      @map("owner_id")
+  storageLocation String       @default("") @map("storage_location")
+  receivedDate    String       @default("") @map("received_date")
+  status          String       @default("보관")
+  memo            String       @default("")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  experiments     Experiment[]
+
+  @@unique([labId, code])
+  @@map("samples")
+}
+
+model Experiment {
+  id            Int      @id @default(autoincrement())
+  lab           Lab      @relation(fields: [labId], references: [id], onDelete: Cascade)
+  labId         Int      @map("lab_id")
+  code          String
+  title         String
+  project       Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId     Int?     @map("project_id")
+  sample        Sample?  @relation(fields: [sampleId], references: [id], onDelete: SetNull)
+  sampleId      Int?     @map("sample_id")
+  assignee      User?    @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  assigneeId    String?  @map("assignee_id")
+  protocol      String   @default("")
+  startDate     String   @default("") @map("start_date")
+  endDate       String?  @map("end_date")
+  status        String   @default("계획")
+  resultSummary String   @default("") @map("result_summary")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([labId, code])
+  @@map("experiments")
+}
+
+model Instrument {
+  id            Int     @id @default(autoincrement())
+  lab           Lab     @relation(fields: [labId], references: [id], onDelete: Cascade)
+  labId         Int     @map("lab_id")
+  name          String
+  model         String  @default("")
+  serialNo      String  @default("") @map("serial_no")
+  manager       User?   @relation(fields: [managerId], references: [id], onDelete: SetNull)
+  managerId     String? @map("manager_id")
+  location      String  @default("")
+  purchaseDate  String? @map("purchase_date")
+  lastCheckDate String? @map("last_check_date")
+  nextCheckDate String? @map("next_check_date")
+  status        String  @default("정상")
+  memo          String  @default("")
+  shared        Boolean @default(false) // 학과 공용 장비 자리 (추후)
+
+  @@map("instruments")
+}
+
+// ---------- 도메인: 인사 (휴가) ----------
+
+model Leave {
+  id        Int      @id @default(autoincrement())
+  lab       Lab      @relation(fields: [labId], references: [id], onDelete: Cascade)
+  labId     Int      @map("lab_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String   @map("user_id")
+  type      String   @default("연차")
+  startDate String   @map("start_date")
+  endDate   String   @map("end_date")
+  days      Float    @default(1)
+  reason    String   @default("")
+  status    String   @default("신청")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("leaves")
 }
 
 model Setting {

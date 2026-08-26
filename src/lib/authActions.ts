@@ -77,6 +77,13 @@ export async function acceptInviteAction(fd: FormData) {
     user = await prisma.user.create({
       data: { email, name, passwordHash: await bcrypt.hash(password, 12) },
     });
+  } else if (!user.passwordHash) {
+    // 시트/마이그레이션으로 만들어진 비밀번호 없는 계정: 초대 수락 시 비밀번호 설정
+    if (password.length < 8) redirect(`/invite/${token}?error=invalid`);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: await bcrypt.hash(password, 12), ...(name ? { name } : {}) },
+    });
   }
 
   await prisma.$transaction([

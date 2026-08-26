@@ -1,19 +1,25 @@
 import Link from "next/link";
-import { listExperiments, listProjects, listSamples, listMembers } from "@/lib/queries";
+import { requireLab } from "@/lib/guard";
+import { listExperiments, listProjects, listSamples, listLabUsers } from "@/lib/queries";
 import { createExperiment, setExperimentStatus, deleteExperiment } from "@/lib/actions";
 import { Badge, PageHeader, Section } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
-export default function ExperimentsPage() {
-  const experiments = listExperiments();
-  const projects = listProjects();
-  const samples = listSamples();
-  const members = listMembers().filter((m) => m.status === "재직");
+export default async function ExperimentsPage() {
+  const ctx = await requireLab();
+  const [experiments, projects, samples, users] = await Promise.all([
+    listExperiments(ctx.labId),
+    listProjects(ctx.labId),
+    listSamples(ctx.labId),
+    listLabUsers(ctx.labId),
+  ]);
+  const active = users.filter((u) => u.workStatus === "재직");
+  const canDelete = ctx.role === "PI" || ctx.role === "LAB_MANAGER";
 
   return (
     <div>
-      <PageHeader title="실험 관리 (LIMS)" desc="실험 기록 · 진행 상태 · 결과 요약" />
+      <PageHeader title={`실험 관리 (LIMS) — ${ctx.labName}`} desc="실험 기록 · 진행 상태 · 결과 요약" />
 
       <Section title={`실험 목록 (${experiments.length}건)`}>
         <div className="overflow-x-auto">
@@ -27,16 +33,16 @@ export default function ExperimentsPage() {
                   <td className="whitespace-nowrap font-mono text-xs">{e.code}</td>
                   <td className="font-medium">{e.title}</td>
                   <td className="whitespace-nowrap font-mono text-xs">
-                    {e.project_id ? (
-                      <Link href={`/projects/${e.project_id}`} className="text-sky-600 hover:underline">{e.project_code}</Link>
+                    {e.project ? (
+                      <Link href={`/projects/${e.project.id}`} className="text-sky-600 hover:underline">{e.project.code}</Link>
                     ) : "-"}
                   </td>
-                  <td className="whitespace-nowrap font-mono text-xs">{e.sample_code ?? "-"}</td>
-                  <td className="whitespace-nowrap">{e.assignee_name ?? "-"}</td>
+                  <td className="whitespace-nowrap font-mono text-xs">{e.sample?.code ?? "-"}</td>
+                  <td className="whitespace-nowrap">{e.assignee?.name ?? "-"}</td>
                   <td className="text-xs text-slate-500">{e.protocol}</td>
-                  <td className="whitespace-nowrap font-mono text-xs">{e.start_date}</td>
+                  <td className="whitespace-nowrap font-mono text-xs">{e.startDate}</td>
                   <td><Badge value={e.status} /></td>
-                  <td className="max-w-48 truncate text-xs text-slate-500" title={e.result_summary}>{e.result_summary}</td>
+                  <td className="max-w-48 truncate text-xs text-slate-500" title={e.resultSummary}>{e.resultSummary}</td>
                   <td className="whitespace-nowrap text-right">
                     <form action={setExperimentStatus} className="inline-flex items-center gap-1">
                       <input type="hidden" name="id" value={e.id} />
@@ -44,11 +50,16 @@ export default function ExperimentsPage() {
                         <option>계획</option><option>진행</option><option>완료</option><option>보류</option>
                       </select>
                       <button className="btn-ghost">변경</button>
-                    </form>{" "}
-                    <form action={deleteExperiment} className="inline">
-                      <input type="hidden" name="id" value={e.id} />
-                      <button className="btn-danger">삭제</button>
                     </form>
+                    {canDelete && (
+                      <>
+                        {" "}
+                        <form action={deleteExperiment} className="inline">
+                          <input type="hidden" name="id" value={e.id} />
+                          <button className="btn-danger">삭제</button>
+                        </form>
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -66,8 +77,8 @@ export default function ExperimentsPage() {
           <input name="title" required placeholder="실험 제목 *" className="inp col-span-2" />
           <select name="assignee_id" className="inp">
             <option value="">담당자 선택</option>
-            {members.map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
+            {active.map((u) => (
+              <option key={u.userId} value={u.userId}>{u.name}</option>
             ))}
           </select>
           <select name="project_id" className="inp">

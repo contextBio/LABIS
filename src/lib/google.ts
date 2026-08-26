@@ -1,25 +1,25 @@
 import fs from "node:fs";
 import path from "node:path";
 import { JWT } from "google-auth-library";
-import { getDb } from "@/db";
+import { prisma } from "./prisma";
 
 const SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets";
 
-// ---------- 설정 저장 ----------
+// ---------- 랩별 설정 저장 ----------
 
-export function getSetting(key: string): string {
-  const row = getDb().prepare("SELECT value FROM settings WHERE key=?").get(key) as
-    | { value: string }
-    | undefined;
+export async function getLabSetting(labId: number, key: string): Promise<string> {
+  const row = await prisma.setting.findUnique({
+    where: { scope_labId_key: { scope: "lab", labId, key } },
+  });
   return row?.value ?? "";
 }
 
-export function setSetting(key: string, value: string) {
-  getDb()
-    .prepare(
-      "INSERT INTO settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
-    )
-    .run(key, value);
+export async function setLabSetting(labId: number, key: string, value: string) {
+  await prisma.setting.upsert({
+    where: { scope_labId_key: { scope: "lab", labId, key } },
+    create: { scope: "lab", labId, key, value },
+    update: { value },
+  });
 }
 
 // ---------- 서비스 계정 ----------

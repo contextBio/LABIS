@@ -1,17 +1,20 @@
 import Link from "next/link";
-import { listProjects, listMembers } from "@/lib/queries";
+import { requireLab } from "@/lib/guard";
+import { listProjects, listLabUsers } from "@/lib/queries";
 import { createProject } from "@/lib/actions";
 import { Badge, PageHeader, Section, won } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
-export default function ProjectsPage() {
-  const projects = listProjects();
-  const members = listMembers().filter((m) => m.status === "재직");
+export default async function ProjectsPage() {
+  const ctx = await requireLab();
+  const projects = await listProjects(ctx.labId);
+  const users = (await listLabUsers(ctx.labId)).filter((u) => u.workStatus === "재직");
+  const canManage = ctx.role === "PI" || ctx.role === "LAB_MANAGER";
 
   return (
     <div>
-      <PageHeader title="과제관리" desc="연구과제 · 참여연구원 · 마일스톤 · 예산" />
+      <PageHeader title={`과제관리 — ${ctx.labName}`} desc="연구과제 · 참여연구원 · 마일스톤 · 예산" />
 
       <Section title={`과제 목록 (${projects.length}건)`}>
         <table className="tbl">
@@ -20,7 +23,7 @@ export default function ProjectsPage() {
           </thead>
           <tbody>
             {projects.map((p) => {
-              const pct = p.total_budget > 0 ? Math.min(100, Math.round((p.spent / p.total_budget) * 100)) : 0;
+              const pct = p.totalBudget > 0 ? Math.min(100, Math.round((p.spent / p.totalBudget) * 100)) : 0;
               return (
                 <tr key={p.id}>
                   <td className="whitespace-nowrap font-mono text-xs">
@@ -30,9 +33,9 @@ export default function ProjectsPage() {
                     <Link href={`/projects/${p.id}`} className="font-medium hover:text-sky-600">{p.title}</Link>
                   </td>
                   <td className="whitespace-nowrap text-xs text-slate-500">{p.sponsor}</td>
-                  <td className="whitespace-nowrap">{p.pi_name ?? "-"}</td>
-                  <td className="whitespace-nowrap text-xs text-slate-500">{p.start_date} ~ {p.end_date}</td>
-                  <td className="whitespace-nowrap">{won(p.total_budget)}</td>
+                  <td className="whitespace-nowrap">{p.piName ?? "-"}</td>
+                  <td className="whitespace-nowrap text-xs text-slate-500">{p.startDate} ~ {p.endDate}</td>
+                  <td className="whitespace-nowrap">{won(p.totalBudget)}</td>
                   <td>{pct}%</td>
                   <td><Badge value={p.status} /></td>
                 </tr>
@@ -45,28 +48,30 @@ export default function ProjectsPage() {
         </table>
       </Section>
 
-      <Section title="신규 과제 등록">
-        <form action={createProject} className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <input name="code" required placeholder="과제번호 *" className="inp" />
-          <input name="title" required placeholder="과제명 *" className="inp col-span-2" />
-          <input name="sponsor" placeholder="발주처" className="inp" />
-          <input name="program" placeholder="사업명" className="inp" />
-          <select name="pi_id" className="inp">
-            <option value="">연구책임자 선택</option>
-            {members.map((m) => (
-              <option key={m.id} value={m.id}>{m.name} ({m.position})</option>
-            ))}
-          </select>
-          <input name="start_date" type="date" required className="inp" />
-          <input name="end_date" type="date" required className="inp" />
-          <input name="total_budget" type="number" min="0" step="1000000" placeholder="총 연구비 (원)" className="inp" />
-          <select name="status" className="inp">
-            <option>진행</option><option>계획</option><option>종료</option><option>중단</option>
-          </select>
-          <input name="memo" placeholder="비고" className="inp" />
-          <button className="btn justify-center">등록</button>
-        </form>
-      </Section>
+      {canManage && (
+        <Section title="신규 과제 등록">
+          <form action={createProject} className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <input name="code" required placeholder="과제번호 *" className="inp" />
+            <input name="title" required placeholder="과제명 *" className="inp col-span-2" />
+            <input name="sponsor" placeholder="발주처" className="inp" />
+            <input name="program" placeholder="사업명" className="inp" />
+            <select name="pi_id" className="inp">
+              <option value="">연구책임자 선택</option>
+              {users.map((u) => (
+                <option key={u.userId} value={u.userId}>{u.name} ({u.position})</option>
+              ))}
+            </select>
+            <input name="start_date" type="date" required className="inp" />
+            <input name="end_date" type="date" required className="inp" />
+            <input name="total_budget" type="number" min="0" step="1000000" placeholder="총 연구비 (원)" className="inp" />
+            <select name="status" className="inp">
+              <option>진행</option><option>계획</option><option>종료</option><option>중단</option>
+            </select>
+            <input name="memo" placeholder="비고" className="inp" />
+            <button className="btn justify-center">등록</button>
+          </form>
+        </Section>
+      )}
     </div>
   );
 }
