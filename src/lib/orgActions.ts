@@ -43,6 +43,20 @@ export async function deleteLab(fd: FormData) {
   revalidatePath("/admin/labs");
 }
 
+/** c1 리눅스 계정명 연결 — MUSE 공동 로그인(SSO·PAM)이 이 사용자로 매핑된다 */
+export async function setUsername(fd: FormData) {
+  const admin = await requireDeptAdmin();
+  const userId = s(fd, "user_id");
+  const username = s(fd, "username").toLowerCase();
+  if (username && !/^[a-z_][a-z0-9_-]*$/.test(username)) return;
+  await prisma.user.update({
+    where: { id: userId },
+    data: { username: username || null },
+  });
+  await audit(admin.id, null, "user.username", "user", userId, { username });
+  revalidatePath("/admin/labs");
+}
+
 export async function toggleDeptAdmin(fd: FormData) {
   const admin = await requireDeptAdmin();
   const userId = s(fd, "user_id");

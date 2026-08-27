@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { loginAction, googleLoginAction } from "@/lib/authActions";
+import { MUSE_COOKIE, verifyMuseToken } from "@/lib/muse";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +16,16 @@ export default async function LoginPage({
   if (userCount === 0) redirect("/setup");
   const googleEnabled = !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
   const next = sp.next ?? "/";
+
+  // MUSE 세션 SSO: 같은 호스트의 muse_session 쿠키가 유효하면 자동 로그인.
+  // 로그아웃 직후(sso=off)나 오류 표시 중에는 건너뛴다.
+  const museUser =
+    sp.sso === "off" || sp.error
+      ? null
+      : verifyMuseToken((await cookies()).get(MUSE_COOKIE)?.value);
+  if (museUser) {
+    redirect(`/api/sso/muse?next=${encodeURIComponent(next)}`);
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
@@ -46,7 +58,7 @@ export default async function LoginPage({
 
         <form action={loginAction} className="space-y-3">
           <input type="hidden" name="next" value={next} />
-          <input name="email" type="email" required placeholder="이메일" className="inp" />
+          <input name="email" type="text" required placeholder="이메일 또는 c1 계정명" className="inp" />
           <input name="password" type="password" required placeholder="비밀번호" className="inp" />
           <button className="btn w-full justify-center">로그인</button>
         </form>
@@ -59,7 +71,9 @@ export default async function LoginPage({
         )}
 
         <p className="mt-4 text-center text-xs text-slate-400">
-          계정은 초대를 통해서만 만들 수 있습니다.
+          c1 서버(MUSE) 계정으로도 로그인할 수 있습니다.
+          <br />
+          이메일 계정은 초대를 통해서만 만들 수 있습니다.
         </p>
       </div>
     </div>

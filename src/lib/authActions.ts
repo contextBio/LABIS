@@ -38,7 +38,8 @@ export async function googleLoginAction(fd: FormData) {
 }
 
 export async function logoutAction() {
-  await signOut({ redirectTo: `${BASE}/login` });
+  // sso=off: MUSE 세션이 살아 있어도 즉시 자동 재로그인되지 않게 한다
+  await signOut({ redirectTo: `${BASE}/login?sso=off` });
 }
 
 /** 최초 부트스트랩: 사용자가 한 명도 없을 때만 학과관리자 계정 생성 */

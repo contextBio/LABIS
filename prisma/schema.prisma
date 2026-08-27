@@ -19,6 +19,7 @@ model User {
   name         String
   image        String?
   passwordHash String?      @map("password_hash")
+  username     String?      @unique // c1 서버 리눅스 계정명 (MUSE 공동 로그인용)
   isDeptAdmin  Boolean      @default(false) @map("is_dept_admin")
   // 인사 프로필
   position     String       @default("연구원")

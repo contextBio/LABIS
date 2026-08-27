@@ -1,6 +1,6 @@
 import { requireDeptAdmin } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
-import { createLab, setLabStatus, deleteLab, toggleDeptAdmin } from "@/lib/orgActions";
+import { createLab, setLabStatus, deleteLab, toggleDeptAdmin, setUsername } from "@/lib/orgActions";
 import { Badge, PageHeader, Section } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -64,13 +64,25 @@ export default async function AdminLabsPage() {
       <Section title={`사용자 (${users.length}명)`}>
         <table className="tbl">
           <thead>
-            <tr><th>이름</th><th>이메일</th><th>소속 랩 (역할)</th><th>학과관리자</th><th></th></tr>
+            <tr><th>이름</th><th>이메일</th><th>c1 계정 (MUSE 로그인)</th><th>소속 랩 (역할)</th><th>학과관리자</th><th></th></tr>
           </thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id}>
                 <td className="font-medium">{u.name}</td>
                 <td className="text-xs text-slate-500">{u.email}</td>
+                <td>
+                  <form action={setUsername} className="inline-flex items-center gap-1">
+                    <input type="hidden" name="user_id" value={u.id} />
+                    <input
+                      name="username"
+                      defaultValue={u.username ?? ""}
+                      placeholder="미연결"
+                      className="inp !w-24 !py-0.5 font-mono !text-xs"
+                    />
+                    <button className="btn-ghost">저장</button>
+                  </form>
+                </td>
                 <td className="text-xs">
                   {u.memberships.length > 0
                     ? u.memberships.map((m) => `${m.lab.name} (${m.role})`).join(", ")

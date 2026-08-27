@@ -12,10 +12,20 @@ const providers: NextAuthConfig["providers"] = [
       password: { label: "비밀번호", type: "password" },
     },
     async authorize(credentials) {
-      const email = String(credentials?.email ?? "").trim().toLowerCase();
+      const login = String(credentials?.email ?? "").trim();
       const password = String(credentials?.password ?? "");
-      if (!email || !password) return null;
-      const user = await prisma.user.findUnique({ where: { email } });
+      if (!login || !password) return null;
+
+      // '@' 없는 입력은 c1 리눅스 계정으로 간주 — MUSE와 같은 PAM 검증
+      if (!login.includes("@")) {
+        const { verifyC1Password, findOrCreateC1User } = await import("./muse");
+        const ok = verifyC1Password(login, password);
+        if (!ok) return null;
+        const user = await findOrCreateC1User(login);
+        return { id: user.id, email: user.email, name: user.name, image: user.image };
+      }
+
+      const user = await prisma.user.findUnique({ where: { email: login.toLowerCase() } });
       if (!user?.passwordHash) return null;
       const ok = await bcrypt.compare(password, user.passwordHash);
       if (!ok) return null;
