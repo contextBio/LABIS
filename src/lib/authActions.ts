@@ -8,13 +8,21 @@ import { signIn, signOut } from "./auth";
 import { prisma } from "./prisma";
 import { audit, requireUser, ACTIVE_LAB_COOKIE } from "./guard";
 
+// Auth.js의 redirectTo는 Next basePath를 인지하지 못하므로 절대 경로로 직접 붙인다
+const BASE = "/labi";
+
+function withBase(next: string): string {
+  const path = next.startsWith("/") ? next : "/";
+  return path.startsWith(BASE) ? path : `${BASE}${path === "/" ? "" : path}` || BASE;
+}
+
 export async function loginAction(fd: FormData) {
   const next = String(fd.get("next") ?? "/") || "/";
   try {
     await signIn("credentials", {
       email: String(fd.get("email") ?? ""),
       password: String(fd.get("password") ?? ""),
-      redirectTo: next.startsWith("/") ? next : "/",
+      redirectTo: withBase(next),
     });
   } catch (e) {
     if (e instanceof AuthError) {
@@ -26,11 +34,11 @@ export async function loginAction(fd: FormData) {
 
 export async function googleLoginAction(fd: FormData) {
   const next = String(fd.get("next") ?? "/") || "/";
-  await signIn("google", { redirectTo: next.startsWith("/") ? next : "/" });
+  await signIn("google", { redirectTo: withBase(next) });
 }
 
 export async function logoutAction() {
-  await signOut({ redirectTo: "/login" });
+  await signOut({ redirectTo: `${BASE}/login` });
 }
 
 /** 최초 부트스트랩: 사용자가 한 명도 없을 때만 학과관리자 계정 생성 */
