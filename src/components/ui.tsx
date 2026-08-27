@@ -35,7 +35,7 @@ const BADGE_COLORS: Record<string, string> = {
 export function Badge({ value }: { value: string }) {
   const cls = BADGE_COLORS[value] ?? "bg-slate-100 text-slate-600";
   return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
+    <span className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
       {value}
     </span>
   );
@@ -57,7 +57,8 @@ export function Section({ title, children, right }: { title: string; children: R
         <h2 className="text-sm font-semibold text-slate-700">{title}</h2>
         {right}
       </div>
-      {children}
+      {/* 모바일에서 넓은 표가 페이지를 밀지 않도록 섹션 내용은 가로 스크롤 컨테이너에 담는다 */}
+      <div className="overflow-x-auto">{children}</div>
     </section>
   );
 }

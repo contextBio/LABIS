@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireLab } from "@/lib/guard";
 import { dashboardStats, upcomingMilestones, recentExperiments, listProjects } from "@/lib/queries";
-import { Badge, PageHeader, Section, StatCard, won } from "@/components/ui";
+import { Badge, PageHeader, Section, StatCard } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +19,8 @@ export default async function Dashboard() {
     <div>
       <PageHeader title={`대시보드 — ${ctx.labName}`} desc="연구실 운영 현황 한눈에 보기" />
 
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-3">
         <StatCard label="진행 중 과제" value={`${stats.activeProjects}건`} href="/projects" />
-        <StatCard label="진행 과제 연구비 (집행/총액)" value={`${won(stats.totalSpent)} / ${won(stats.totalBudget)}`} href="/projects" />
         <StatCard label="보유 시료" value={`${stats.samples}건`} href="/lims/samples" />
         <StatCard label="진행 중 실험" value={`${stats.runningExperiments}건`} href="/lims/experiments" />
         <StatCard label="재직 인원" value={`${stats.members}명`} href="/hr" />
@@ -78,30 +77,20 @@ export default async function Dashboard() {
       <Section title="진행 중 과제">
         <table className="tbl">
           <thead>
-            <tr><th>과제번호</th><th>과제명</th><th>책임자</th><th>기간</th><th>연구비 집행</th></tr>
+            <tr><th>과제번호</th><th>과제명</th><th>책임자</th><th>기간</th><th>상태</th></tr>
           </thead>
           <tbody>
-            {projects.map((p) => {
-              const pct = p.totalBudget > 0 ? Math.min(100, Math.round((p.spent / p.totalBudget) * 100)) : 0;
-              return (
-                <tr key={p.id}>
-                  <td className="whitespace-nowrap font-mono text-xs">
-                    <Link href={`/projects/${p.id}`} className="text-sky-600 hover:underline">{p.code}</Link>
-                  </td>
-                  <td>{p.title}</td>
-                  <td className="whitespace-nowrap">{p.piName ?? "-"}</td>
-                  <td className="whitespace-nowrap text-xs text-slate-500">{p.startDate} ~ {p.endDate}</td>
-                  <td className="w-48">
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-                        <div className="h-full rounded-full bg-sky-500" style={{ width: `${pct}%` }} />
-                      </div>
-                      <span className="text-xs text-slate-500">{pct}%</span>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
+            {projects.map((p) => (
+              <tr key={p.id}>
+                <td className="whitespace-nowrap font-mono text-xs">
+                  <Link href={`/projects/${p.id}`} className="text-sky-600 hover:underline">{p.code}</Link>
+                </td>
+                <td>{p.title}</td>
+                <td className="whitespace-nowrap">{p.piName ?? "-"}</td>
+                <td className="whitespace-nowrap text-xs text-slate-500">{p.startDate} ~ {p.endDate}</td>
+                <td><Badge value={p.status} /></td>
+              </tr>
+            ))}
             {projects.length === 0 && (
               <tr><td colSpan={5} className="py-6 text-center text-slate-400">진행 중인 과제가 없습니다</td></tr>
             )}
