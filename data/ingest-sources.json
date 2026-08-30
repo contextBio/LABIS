@@ -1,3 +1,14 @@
 {
-  "sources": []
+  "sources": [
+    {
+      "dir": "/home/hg/GoogleDrive/10_행정",
+      "labId": 2,
+      "label": "행정"
+    },
+    {
+      "dir": "/home/hg/GoogleDrive/06_시스템의학연구실",
+      "labId": 2,
+      "label": "연구실"
+    }
+  ]
 }

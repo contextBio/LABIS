@@ -24,6 +24,7 @@ const STATE_FILE = path.join(process.cwd(), "data", "ingest-state.json");
 // 가져오기 순서 (참조 무결성: 과제 → 관계형 → 나머지)
 const ORDER: TabName[] = [
   "과제", "참여연구원", "마일스톤", "예산집행", "시료", "실험", "장비", "휴가",
+  "논문", "특허", "기술이전", "구매", "연구비수입",
 ];
 
 type State = Record<string, number>; // 절대경로 → mtimeMs

@@ -9,6 +9,7 @@ import {
 
 export const TABS = [
   "인원", "과제", "참여연구원", "마일스톤", "예산집행", "시료", "실험", "장비", "휴가",
+  "논문", "특허", "기술이전", "구매", "연구비수입",
 ] as const;
 export type TabName = (typeof TABS)[number];
 
@@ -353,6 +354,160 @@ export const SPECS: Record<TabName, EntitySpec> = {
     },
   },
 
+  논문: {
+    headers: ["연도", "제목", "저널", "저자", "DOI", "과제번호", "비고"],
+    exportRows: async (labId) => {
+      const ps = await prisma.publication.findMany({
+        where: { labId },
+        include: { project: { select: { code: true } } },
+        orderBy: [{ year: "asc" }, { id: "asc" }],
+      });
+      return ps.map((p) => [p.year, p.title, p.journal, p.authors, p.doi, p.project?.code ?? "", p.memo]);
+    },
+    importRows: async (labId, rows, log) => {
+      const codes = await codeMap(labId);
+      await prisma.publication.deleteMany({ where: { labId } });
+      let n = 0;
+      for (const r of rows) {
+        if (!r["제목"]) continue;
+        await prisma.publication.create({
+          data: {
+            labId, title: r["제목"], year: r["연도"] || "", journal: r["저널"] || "",
+            authors: r["저자"] || "", doi: r["DOI"] || "",
+            projectId: codes.get(r["과제번호"]) ?? null, memo: r["비고"] || "",
+          },
+        });
+        n++;
+      }
+      log.push(`논문: 전체 교체, ${n}건 입력`);
+    },
+  },
+
+  특허: {
+    headers: ["일자", "발명명칭", "출원번호", "등록번호", "발명자", "상태", "과제번호", "비고"],
+    exportRows: async (labId) => {
+      const ps = await prisma.patent.findMany({
+        where: { labId },
+        include: { project: { select: { code: true } } },
+        orderBy: [{ date: "asc" }, { id: "asc" }],
+      });
+      return ps.map((p) => [
+        p.date, p.title, p.applicationNo, p.registrationNo, p.inventors, p.status,
+        p.project?.code ?? "", p.memo,
+      ]);
+    },
+    importRows: async (labId, rows, log) => {
+      const codes = await codeMap(labId);
+      await prisma.patent.deleteMany({ where: { labId } });
+      let n = 0;
+      for (const r of rows) {
+        if (!r["발명명칭"]) continue;
+        await prisma.patent.create({
+          data: {
+            labId, title: r["발명명칭"], date: r["일자"] || "",
+            applicationNo: r["출원번호"] || "", registrationNo: r["등록번호"] || "",
+            inventors: r["발명자"] || "", status: r["상태"] || "출원",
+            projectId: codes.get(r["과제번호"]) ?? null, memo: r["비고"] || "",
+          },
+        });
+        n++;
+      }
+      log.push(`특허: 전체 교체, ${n}건 입력`);
+    },
+  },
+
+  기술이전: {
+    headers: ["계약일", "기술명", "이전대상", "기술료", "과제번호", "비고"],
+    exportRows: async (labId) => {
+      const ts = await prisma.techTransfer.findMany({
+        where: { labId },
+        include: { project: { select: { code: true } } },
+        orderBy: [{ contractDate: "asc" }, { id: "asc" }],
+      });
+      return ts.map((t) => [t.contractDate, t.title, t.licensee, t.amount, t.project?.code ?? "", t.memo]);
+    },
+    importRows: async (labId, rows, log) => {
+      const codes = await codeMap(labId);
+      await prisma.techTransfer.deleteMany({ where: { labId } });
+      let n = 0;
+      for (const r of rows) {
+        if (!r["기술명"]) continue;
+        await prisma.techTransfer.create({
+          data: {
+            labId, title: r["기술명"], contractDate: r["계약일"] || "",
+            licensee: r["이전대상"] || "", amount: num(r["기술료"]),
+            projectId: codes.get(r["과제번호"]) ?? null, memo: r["비고"] || "",
+          },
+        });
+        n++;
+      }
+      log.push(`기술이전: 전체 교체, ${n}건 입력`);
+    },
+  },
+
+  구매: {
+    headers: ["일자", "품목", "구입처", "비목", "금액", "신청자", "과제번호", "상태", "비고"],
+    exportRows: async (labId) => {
+      const ps = await prisma.purchase.findMany({
+        where: { labId },
+        include: { project: { select: { code: true } }, requester: { select: { name: true } } },
+        orderBy: [{ orderDate: "asc" }, { id: "asc" }],
+      });
+      return ps.map((p) => [
+        p.orderDate, p.item, p.vendor, p.category, p.amount, p.requester?.name ?? "",
+        p.project?.code ?? "", p.status, p.memo,
+      ]);
+    },
+    importRows: async (labId, rows, log) => {
+      const names = await nameMap(labId);
+      const codes = await codeMap(labId);
+      await prisma.purchase.deleteMany({ where: { labId } });
+      let n = 0;
+      for (const r of rows) {
+        if (!r["품목"]) continue;
+        await prisma.purchase.create({
+          data: {
+            labId, item: r["품목"], orderDate: r["일자"] || "", vendor: r["구입처"] || "",
+            category: r["비목"] || "재료비", amount: num(r["금액"]),
+            requesterId: names.get(r["신청자"]) ?? null,
+            projectId: codes.get(r["과제번호"]) ?? null,
+            status: r["상태"] || "신청", memo: r["비고"] || "",
+          },
+        });
+        n++;
+      }
+      log.push(`구매: 전체 교체, ${n}건 입력`);
+    },
+  },
+
+  연구비수입: {
+    headers: ["일자", "과제번호", "내용", "금액"],
+    exportRows: async (labId) => {
+      const is_ = await prisma.fundIncome.findMany({
+        where: { labId },
+        include: { project: { select: { code: true } } },
+        orderBy: [{ date: "asc" }, { id: "asc" }],
+      });
+      return is_.map((i) => [i.date, i.project?.code ?? "", i.note, i.amount]);
+    },
+    importRows: async (labId, rows, log) => {
+      const codes = await codeMap(labId);
+      await prisma.fundIncome.deleteMany({ where: { labId } });
+      let n = 0;
+      for (const r of rows) {
+        if (!r["금액"]) continue;
+        await prisma.fundIncome.create({
+          data: {
+            labId, date: r["일자"] || "", note: r["내용"] || "",
+            amount: num(r["금액"]), projectId: codes.get(r["과제번호"]) ?? null,
+          },
+        });
+        n++;
+      }
+      log.push(`연구비수입: 전체 교체, ${n}건 입력`);
+    },
+  },
+
   휴가: {
     headers: ["이름", "구분", "시작일", "종료일", "일수", "사유", "상태"],
     exportRows: async (labId) => {
@@ -392,6 +547,7 @@ export const SPECS: Record<TabName, EntitySpec> = {
 // 가져오기 순서: 참조 무결성 (과제 → 관계형 → 나머지)
 const IMPORT_ORDER: TabName[] = [
   "과제", "참여연구원", "마일스톤", "예산집행", "시료", "실험", "장비", "휴가",
+  "논문", "특허", "기술이전", "구매", "연구비수입",
 ];
 
 export async function exportAll(labId: number): Promise<string[]> {

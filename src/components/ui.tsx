@@ -22,6 +22,14 @@ const BADGE_COLORS: Record<string, string> = {
   운영: "bg-emerald-100 text-emerald-700",
   휴면: "bg-amber-100 text-amber-700",
   폐쇄: "bg-slate-200 text-slate-600",
+  // 성과·구매
+  출원: "bg-sky-100 text-sky-700",
+  등록: "bg-emerald-100 text-emerald-700",
+  거절: "bg-red-100 text-red-700",
+  포기: "bg-slate-200 text-slate-600",
+  발주: "bg-violet-100 text-violet-700",
+  입고: "bg-emerald-100 text-emerald-700",
+  취소: "bg-slate-200 text-slate-600",
   // LIMS
   보관: "bg-sky-100 text-sky-700",
   사용중: "bg-violet-100 text-violet-700",

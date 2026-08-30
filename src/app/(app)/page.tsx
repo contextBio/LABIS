@@ -24,6 +24,8 @@ export default async function Dashboard() {
         <StatCard label="보유 시료" value={`${stats.samples}건`} href="/lims/samples" />
         <StatCard label="진행 중 실험" value={`${stats.runningExperiments}건`} href="/lims/experiments" />
         <StatCard label="재직 인원" value={`${stats.members}명`} href="/hr" />
+        <StatCard label="올해 논문" value={`${stats.pubsThisYear}편`} href="/outcomes" />
+        <StatCard label="구매 진행 중" value={`${stats.pendingPurchases}건`} href="/purchases" accent={stats.pendingPurchases > 0} />
         <StatCard label="휴가 승인 대기" value={`${stats.pendingLeaves}건`} href="/hr" accent={stats.pendingLeaves > 0} />
         <StatCard label="점검 필요 장비" value={`${stats.instrumentsNeedCheck}대`} href="/lims/instruments" accent={stats.instrumentsNeedCheck > 0} />
       </div>

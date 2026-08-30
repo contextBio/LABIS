@@ -214,6 +214,149 @@ export async function deleteBudgetItem(fd: FormData) {
   revalidatePath(`/projects/${n(fd, "project_id")}`);
 }
 
+// ---------- 성과 (논문 · 특허 · 기술이전) ----------
+
+export async function createPublication(fd: FormData) {
+  const ctx = await requireLab();
+  await prisma.publication.create({
+    data: {
+      labId: ctx.labId,
+      title: s(fd, "title"),
+      journal: s(fd, "journal"),
+      year: s(fd, "year"),
+      authors: s(fd, "authors"),
+      doi: s(fd, "doi"),
+      projectId: await assertLabProject(ctx.labId, n(fd, "project_id")).then((v) => v ?? null),
+      memo: s(fd, "memo"),
+    },
+  });
+  revalidatePath("/outcomes");
+}
+
+export async function deletePublication(fd: FormData) {
+  const ctx = await requireLab("LAB_MANAGER");
+  await prisma.publication.deleteMany({ where: { id: n(fd, "id"), labId: ctx.labId } });
+  revalidatePath("/outcomes");
+}
+
+export async function createPatent(fd: FormData) {
+  const ctx = await requireLab();
+  await prisma.patent.create({
+    data: {
+      labId: ctx.labId,
+      title: s(fd, "title"),
+      applicationNo: s(fd, "application_no"),
+      registrationNo: s(fd, "registration_no"),
+      status: s(fd, "status") || "출원",
+      date: s(fd, "date"),
+      inventors: s(fd, "inventors"),
+      projectId: await assertLabProject(ctx.labId, n(fd, "project_id")).then((v) => v ?? null),
+      memo: s(fd, "memo"),
+    },
+  });
+  revalidatePath("/outcomes");
+}
+
+export async function setPatentStatus(fd: FormData) {
+  const ctx = await requireLab();
+  await prisma.patent.updateMany({
+    where: { id: n(fd, "id"), labId: ctx.labId },
+    data: { status: s(fd, "status") },
+  });
+  revalidatePath("/outcomes");
+}
+
+export async function deletePatent(fd: FormData) {
+  const ctx = await requireLab("LAB_MANAGER");
+  await prisma.patent.deleteMany({ where: { id: n(fd, "id"), labId: ctx.labId } });
+  revalidatePath("/outcomes");
+}
+
+export async function createTechTransfer(fd: FormData) {
+  const ctx = await requireLab("LAB_MANAGER");
+  await prisma.techTransfer.create({
+    data: {
+      labId: ctx.labId,
+      title: s(fd, "title"),
+      licensee: s(fd, "licensee"),
+      contractDate: s(fd, "contract_date"),
+      amount: n(fd, "amount"),
+      projectId: await assertLabProject(ctx.labId, n(fd, "project_id")).then((v) => v ?? null),
+      memo: s(fd, "memo"),
+    },
+  });
+  revalidatePath("/outcomes");
+}
+
+export async function deleteTechTransfer(fd: FormData) {
+  const ctx = await requireLab("LAB_MANAGER");
+  await prisma.techTransfer.deleteMany({ where: { id: n(fd, "id"), labId: ctx.labId } });
+  revalidatePath("/outcomes");
+}
+
+// ---------- 구매 ----------
+
+export async function createPurchase(fd: FormData) {
+  const ctx = await requireLab();
+  await prisma.purchase.create({
+    data: {
+      labId: ctx.labId,
+      item: s(fd, "item"),
+      vendor: s(fd, "vendor"),
+      category: s(fd, "category") || "재료비",
+      amount: n(fd, "amount"),
+      orderDate: s(fd, "order_date") || today(),
+      status: s(fd, "status") || "신청",
+      requesterId: (await assertLabUser(ctx.labId, sid(fd, "requester_id"))) ?? ctx.user.id,
+      projectId: await assertLabProject(ctx.labId, n(fd, "project_id")).then((v) => v ?? null),
+      memo: s(fd, "memo"),
+    },
+  });
+  revalidatePath("/purchases");
+}
+
+export async function setPurchaseStatus(fd: FormData) {
+  const ctx = await requireLab();
+  await prisma.purchase.updateMany({
+    where: { id: n(fd, "id"), labId: ctx.labId },
+    data: { status: s(fd, "status") },
+  });
+  revalidatePath("/purchases");
+}
+
+export async function deletePurchase(fd: FormData) {
+  const ctx = await requireLab("LAB_MANAGER");
+  await prisma.purchase.deleteMany({ where: { id: n(fd, "id"), labId: ctx.labId } });
+  revalidatePath("/purchases");
+}
+
+// ---------- 연구비 수입 ----------
+
+export async function createFundIncome(fd: FormData) {
+  const ctx = await requireLab("LAB_MANAGER");
+  const income = await prisma.fundIncome.create({
+    data: {
+      labId: ctx.labId,
+      projectId: await assertLabProject(ctx.labId, n(fd, "project_id")).then((v) => v ?? null),
+      date: s(fd, "date") || today(),
+      amount: n(fd, "amount"),
+      note: s(fd, "note"),
+    },
+  });
+  await audit(ctx.user.id, ctx.labId, "fund.income_add", "fund_income", income.id, {
+    amount: income.amount,
+  });
+  revalidatePath("/finance");
+}
+
+export async function deleteFundIncome(fd: FormData) {
+  const ctx = await requireLab("LAB_MANAGER");
+  const id = n(fd, "id");
+  await prisma.fundIncome.deleteMany({ where: { id, labId: ctx.labId } });
+  await audit(ctx.user.id, ctx.labId, "fund.income_delete", "fund_income", id);
+  revalidatePath("/finance");
+}
+
 // ---------- LIMS ----------
 
 export async function createSample(fd: FormData) {

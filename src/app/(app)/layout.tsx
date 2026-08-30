@@ -4,13 +4,17 @@ import { requireUser, ACTIVE_LAB_COOKIE } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { logoutAction, switchLabAction } from "@/lib/authActions";
 
+// 관리 항목: 인사 · 과제 · 연구비 · 성과 · 구매 · 장비 (+ LIMS 기록)
 const NAV = [
   { href: "/", label: "대시보드", icon: "◧" },
-  { href: "/projects", label: "과제관리", icon: "▤" },
+  { href: "/hr", label: "인사", icon: "◉" },
+  { href: "/projects", label: "과제", icon: "▤" },
+  { href: "/finance", label: "연구비", icon: "₩" },
+  { href: "/outcomes", label: "성과", icon: "◆" },
+  { href: "/purchases", label: "구매", icon: "▦" },
+  { href: "/lims/instruments", label: "장비", icon: "⚙" },
   { href: "/lims/samples", label: "시료 (LIMS)", icon: "⬡" },
   { href: "/lims/experiments", label: "실험 (LIMS)", icon: "⚗" },
-  { href: "/lims/instruments", label: "장비 (LIMS)", icon: "⚙" },
-  { href: "/hr", label: "인사관리", icon: "◉" },
   { href: "/sync", label: "구글시트 연동", icon: "⇄" },
 ];
 

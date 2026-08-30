@@ -36,6 +36,7 @@ model User {
   experiments    Experiment[]
   instruments    Instrument[]
   leaves         Leave[]
+  purchases      Purchase[]
 
   @@map("users")
 }
@@ -56,6 +57,11 @@ model Lab {
   experiments Experiment[]
   instruments Instrument[]
   leaves      Leave[]
+  publications  Publication[]
+  patents       Patent[]
+  techTransfers TechTransfer[]
+  purchases     Purchase[]
+  fundIncomes   FundIncome[]
 
   @@map("labs")
 }
@@ -129,6 +135,11 @@ model Project {
   budgetItems BudgetItem[]
   samples     Sample[]
   experiments Experiment[]
+  publications  Publication[]
+  patents       Patent[]
+  techTransfers TechTransfer[]
+  purchases     Purchase[]
+  fundIncomes   FundIncome[]
 
   @@unique([labId, code])
   @@map("projects")
@@ -238,6 +249,94 @@ model Instrument {
   shared        Boolean @default(false) // 학과 공용 장비 자리 (추후)
 
   @@map("instruments")
+}
+
+// ---------- 도메인: 성과 (논문 · 특허 · 기술이전) ----------
+
+model Publication {
+  id        Int      @id @default(autoincrement())
+  lab       Lab      @relation(fields: [labId], references: [id], onDelete: Cascade)
+  labId     Int      @map("lab_id")
+  title     String
+  journal   String   @default("")
+  year      String   @default("")
+  authors   String   @default("")
+  doi       String   @default("")
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId Int?     @map("project_id")
+  memo      String   @default("")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("publications")
+}
+
+model Patent {
+  id             Int      @id @default(autoincrement())
+  lab            Lab      @relation(fields: [labId], references: [id], onDelete: Cascade)
+  labId          Int      @map("lab_id")
+  title          String
+  applicationNo  String   @default("") @map("application_no")
+  registrationNo String   @default("") @map("registration_no")
+  status         String   @default("출원")
+  date           String   @default("")
+  inventors      String   @default("")
+  project        Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId      Int?     @map("project_id")
+  memo           String   @default("")
+
+  @@map("patents")
+}
+
+model TechTransfer {
+  id           Int      @id @default(autoincrement())
+  lab          Lab      @relation(fields: [labId], references: [id], onDelete: Cascade)
+  labId        Int      @map("lab_id")
+  title        String
+  licensee     String   @default("")
+  contractDate String   @default("") @map("contract_date")
+  amount       Int      @default(0)
+  project      Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId    Int?     @map("project_id")
+  memo         String   @default("")
+
+  @@map("tech_transfers")
+}
+
+// ---------- 도메인: 구매 ----------
+
+model Purchase {
+  id          Int      @id @default(autoincrement())
+  lab         Lab      @relation(fields: [labId], references: [id], onDelete: Cascade)
+  labId       Int      @map("lab_id")
+  item        String
+  vendor      String   @default("")
+  category    String   @default("재료비")
+  amount      Int      @default(0)
+  orderDate   String   @default("") @map("order_date")
+  status      String   @default("신청")
+  requester   User?    @relation(fields: [requesterId], references: [id], onDelete: SetNull)
+  requesterId String?  @map("requester_id")
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId   Int?     @map("project_id")
+  memo        String   @default("")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("purchases")
+}
+
+// ---------- 도메인: 연구비 수입 (수지 분석용) ----------
+
+model FundIncome {
+  id        Int      @id @default(autoincrement())
+  lab       Lab      @relation(fields: [labId], references: [id], onDelete: Cascade)
+  labId     Int      @map("lab_id")
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId Int?     @map("project_id")
+  date      String   @default("")
+  amount    Int      @default(0)
+  note      String   @default("")
+
+  @@map("fund_incomes")
 }
 
 // ---------- 도메인: 인사 (휴가) ----------

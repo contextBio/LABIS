@@ -115,9 +115,100 @@ export async function listInstruments(labId: number) {
   });
 }
 
+export async function listPublications(labId: number) {
+  return prisma.publication.findMany({
+    where: { labId },
+    include: { project: { select: { code: true } } },
+    orderBy: [{ year: "desc" }, { id: "desc" }],
+  });
+}
+
+export async function listPatents(labId: number) {
+  return prisma.patent.findMany({
+    where: { labId },
+    include: { project: { select: { code: true } } },
+    orderBy: [{ date: "desc" }, { id: "desc" }],
+  });
+}
+
+export async function listTechTransfers(labId: number) {
+  return prisma.techTransfer.findMany({
+    where: { labId },
+    include: { project: { select: { code: true } } },
+    orderBy: [{ contractDate: "desc" }, { id: "desc" }],
+  });
+}
+
+export async function listPurchases(labId: number) {
+  return prisma.purchase.findMany({
+    where: { labId },
+    include: {
+      project: { select: { code: true } },
+      requester: { select: { name: true } },
+    },
+    orderBy: [{ orderDate: "desc" }, { id: "desc" }],
+  });
+}
+
+export async function listFundIncomes(labId: number) {
+  return prisma.fundIncome.findMany({
+    where: { labId },
+    include: { project: { select: { code: true, title: true } } },
+    orderBy: [{ date: "desc" }, { id: "desc" }],
+  });
+}
+
+/** 과제별 수지 분석 — 수입(입금 누계) vs 지출(예산 집행 + 구매) */
+export async function financeSummary(labId: number) {
+  const projects = await prisma.project.findMany({
+    where: { labId },
+    include: {
+      budgetItems: { select: { amount: true } },
+      purchases: { select: { amount: true, status: true } },
+      fundIncomes: { select: { amount: true } },
+    },
+    orderBy: [{ status: "asc" }, { endDate: "asc" }],
+  });
+  // 과제 미지정 항목
+  const [unassignedIncome, unassignedPurchases] = await Promise.all([
+    prisma.fundIncome.aggregate({ where: { labId, projectId: null }, _sum: { amount: true } }),
+    prisma.purchase.aggregate({
+      where: { labId, projectId: null, status: { not: "취소" } },
+      _sum: { amount: true },
+    }),
+  ]);
+  const rows = projects.map((p) => {
+    const income = p.fundIncomes.reduce((s, x) => s + x.amount, 0);
+    const spentBudget = p.budgetItems.reduce((s, x) => s + x.amount, 0);
+    const spentPurchase = p.purchases
+      .filter((x) => x.status !== "취소")
+      .reduce((s, x) => s + x.amount, 0);
+    return {
+      id: p.id,
+      code: p.code,
+      title: p.title,
+      status: p.status,
+      totalBudget: p.totalBudget,
+      income,
+      spent: spentBudget + spentPurchase,
+      spentBudget,
+      spentPurchase,
+      balance: income - (spentBudget + spentPurchase),
+    };
+  });
+  return {
+    rows,
+    unassigned: {
+      income: unassignedIncome._sum.amount ?? 0,
+      spentPurchase: unassignedPurchases._sum.amount ?? 0,
+    },
+  };
+}
+
 export async function dashboardStats(labId: number) {
   const today = new Date().toISOString().slice(0, 10);
-  const [activeProjects, budgetAgg, spentAgg, members, samples, runningExperiments, brokenOrChecking, overdueCheck, pendingLeaves] =
+  const year = String(new Date().getFullYear());
+  const [activeProjects, budgetAgg, spentAgg, members, samples, runningExperiments, brokenOrChecking, overdueCheck, pendingLeaves, pubsThisYear, pendingPurchases] =
     await Promise.all([
       prisma.project.count({ where: { labId, status: "진행" } }),
       prisma.project.aggregate({ where: { labId, status: "진행" }, _sum: { totalBudget: true } }),
@@ -130,6 +221,8 @@ export async function dashboardStats(labId: number) {
         where: { labId, status: "정상", nextCheckDate: { not: null, lte: today } },
       }),
       prisma.leave.count({ where: { labId, status: "신청" } }),
+      prisma.publication.count({ where: { labId, year } }),
+      prisma.purchase.count({ where: { labId, status: { in: ["신청", "발주"] } } }),
     ]);
   return {
     activeProjects,
@@ -140,6 +233,8 @@ export async function dashboardStats(labId: number) {
     runningExperiments,
     instrumentsNeedCheck: brokenOrChecking + overdueCheck,
     pendingLeaves,
+    pubsThisYear,
+    pendingPurchases,
   };
 }
 
