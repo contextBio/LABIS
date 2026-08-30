@@ -44,7 +44,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
   // Auth.js가 만드는 브라우저용 URL은 Next basePath(/labis)를 모른다 — 명시적으로 붙인다.
   // (내부 핸들러 경로는 basePath가 제거된 /api/auth 그대로가 맞다)
-  pages: { signIn: "/labis/login" },
+  pages: { signIn: `${process.env.NEXT_BASE_PATH || "/labis"}/login` },
   callbacks: {
     async signIn({ user, account }) {
       if (account?.provider === "google") {

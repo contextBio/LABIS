@@ -7,7 +7,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { encode } from "next-auth/jwt";
 import { MUSE_COOKIE, verifyMuseToken, findOrCreateC1User } from "@/lib/muse";
 
-const BASE = "/labis";
+const BASE = process.env.NEXT_BASE_PATH || "/labis";
 const SESSION_MAX_AGE = 12 * 3600; // MUSE 세션 TTL과 맞춘다
 
 export async function GET(req: NextRequest) {
