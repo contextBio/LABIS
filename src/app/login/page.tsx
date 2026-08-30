@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { loginAction, googleLoginAction } from "@/lib/authActions";
 import { MUSE_COOKIE, verifyMuseToken } from "@/lib/muse";
+import { contextBioLoginUrl } from "@/lib/contextbio";
+import ContextBioSignIn from "@/components/ContextBioSignIn";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +18,15 @@ export default async function LoginPage({
   if (userCount === 0) redirect("/setup");
   const googleEnabled = !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
   const next = sp.next ?? "/";
+  // 통합 계정(contextbio.ai) — 키가 있을 때만 낸다. 없으면 검증할 방법이 없어
+  // 눌러도 실패하는 단추가 되고, 그것은 없는 것보다 나쁘다.
+  // APP_URL 은 기본 경로까지 포함한다(운영 …/labis, 개발 …/labis-dev) — 여기에
+  // /labis 를 또 붙이면 개발에서만 어긋난다.
+  const appUrl = (process.env.APP_URL || "").replace(/\/+$/, "");
+  const basePath = process.env.NEXT_BASE_PATH || "/labis";
+  const contextBio = process.env.CONTEXTBIO_FIREBASE_API_KEY
+    ? contextBioLoginUrl(`${appUrl}/login?next=${encodeURIComponent(next)}`)
+    : "";
 
   // MUSE 세션 SSO: 같은 호스트의 muse_session 쿠키가 유효하면 자동 로그인.
   // 로그아웃 직후(sso=off)나 오류 표시 중에는 건너뛴다.
@@ -68,6 +79,14 @@ export default async function LoginPage({
             <input type="hidden" name="next" value={next} />
             <button className="btn-ghost w-full justify-center !py-2">Google 계정으로 로그인</button>
           </form>
+        )}
+
+        {contextBio && (
+          <ContextBioSignIn
+            loginUrl={contextBio}
+            next={next}
+            postUrl={`${basePath}/api/sso/contextbio`}
+          />
         )}
 
         <p className="mt-4 text-center text-xs text-slate-400">
