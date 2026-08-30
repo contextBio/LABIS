@@ -1,6 +1,25 @@
 # LABIS — Lab Intelligence System
 
-학과·여러 연구실을 위한 연구 운영 시스템: **LIMS + 과제관리 + 인사관리** (한국어 UI, 멀티랩)
+학과·여러 연구실을 위한 연구 운영 시스템 (한국어 UI, 멀티랩).
+관리 항목: **인사 · 과제 · 연구비(수지 분석) · 성과(논문/특허/기술이전) · 구매 · 장비** + LIMS(시료·실험)
+
+## 브랜치·배포 구조 (dev / main 분리)
+
+| | 브랜치 | 위치 | 포트 | DB |
+|---|---|---|---|---|
+| 운영 | `main` | `/mnt/S1/sdata/agents/apps/LABIS` | 3100 (→ https://c1.sysmed.kr/labis) | `labi` |
+| 개발 | `dev` | `/mnt/S1/sdata/agents/apps/LABIS-dev` (git worktree) | 3101 | `labi_dev` (운영 복제본) |
+
+개발 흐름: **LABIS-dev에서 작업·커밋(dev)** → 검증 후 운영 폴더에서
+`git merge dev && npm run build && 재시작`. 스키마 변경 시 dev에서 `npm run db:migrate`로
+마이그레이션을 만들고, 운영 머지 후 `npm run db:deploy`.
+
+```bash
+# 개발 서버
+cd /mnt/S1/sdata/agents/apps/LABIS-dev && PORT=3101 npm run dev
+# 운영 배포
+cd /mnt/S1/sdata/agents/apps/LABIS && git merge dev && npm run db:deploy && npm run build && (재시작)
+```
 
 ## 실행
 
