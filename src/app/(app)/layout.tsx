@@ -81,8 +81,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <aside className="hidden w-56 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
         <div className="px-5 py-5">
           <Link href="/" className="block">
-            <div className="text-lg font-black tracking-tight text-sky-700">LABi</div>
-            <div className="text-[11px] text-slate-400">Lab intelligence</div>
+            <div className="text-lg font-black tracking-tight text-sky-700">LABIS</div>
+            <div className="text-[11px] text-slate-400">Lab Intelligence System</div>
           </Link>
         </div>
 
@@ -122,7 +122,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <header className="sticky top-0 z-20 border-b border-slate-200 bg-white lg:hidden">
         <div className="flex items-center justify-between px-4 py-2.5">
           <Link href="/" className="flex items-baseline gap-2">
-            <span className="text-lg font-black tracking-tight text-sky-700">LABi</span>
+            <span className="text-lg font-black tracking-tight text-sky-700">LABIS</span>
             {currentLab && <span className="max-w-40 truncate text-xs text-slate-400">{currentLab}</span>}
           </Link>
           <details className="relative">

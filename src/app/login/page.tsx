@@ -31,8 +31,8 @@ export default async function LoginPage({
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
       <div className="card w-full max-w-sm">
         <div className="mb-6 text-center">
-          <div className="text-2xl font-black tracking-tight text-sky-700">LABi</div>
-          <div className="text-xs text-slate-400">Lab intelligence — 연구소 운영 시스템</div>
+          <div className="text-2xl font-black tracking-tight text-sky-700">LABIS</div>
+          <div className="text-xs text-slate-400">Lab Intelligence System — 연구소 운영 시스템</div>
         </div>
 
         {(sp.error === "1" || sp.error === "CredentialsSignin") && (

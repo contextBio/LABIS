@@ -2,11 +2,11 @@
  * MUSE 로그인 시스템 공동활용.
  *
  * MUSE(c1.sysmed.kr:8443)는 c1 리눅스 계정을 PAM으로 검증하고 itsdangerous
- * 서명 쿠키(muse_session)를 심는다. LABi는 같은 호스트(c1.sysmed.kr)에서
+ * 서명 쿠키(muse_session)를 심는다. LABIS는 같은 호스트(c1.sysmed.kr)에서
  * 서빙되므로 그 쿠키를 그대로 받는다. 여기서는
  *  1) muse_session 토큰 검증 (itsdangerous URLSafeTimedSerializer 호환 구현)
  *  2) c1 계정+암호 직접 검증 (MUSE와 같은 root 헬퍼 muse-pam-verify)
- *  3) c1 계정명 ↔ LABi User 매핑(find-or-create)
+ *  3) c1 계정명 ↔ LABIS User 매핑(find-or-create)
  * 을 제공한다.
  */
 import "server-only";
@@ -102,7 +102,7 @@ export function verifyC1Password(username: string, password: string): boolean {
   }
 }
 
-/** c1 계정명으로 LABi 사용자 찾기(없으면 생성). */
+/** c1 계정명으로 LABIS 사용자 찾기(없으면 생성). */
 export async function findOrCreateC1User(username: string) {
   const existing = await prisma.user.findUnique({ where: { username } });
   if (existing) return existing;

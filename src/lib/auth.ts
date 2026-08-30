@@ -42,9 +42,9 @@ if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers,
   session: { strategy: "jwt" },
-  // Auth.js가 만드는 브라우저용 URL은 Next basePath(/labi)를 모른다 — 명시적으로 붙인다.
+  // Auth.js가 만드는 브라우저용 URL은 Next basePath(/labis)를 모른다 — 명시적으로 붙인다.
   // (내부 핸들러 경로는 basePath가 제거된 /api/auth 그대로가 맞다)
-  pages: { signIn: "/labi/login" },
+  pages: { signIn: "/labis/login" },
   callbacks: {
     async signIn({ user, account }) {
       if (account?.provider === "google") {

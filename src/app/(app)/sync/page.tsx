@@ -71,10 +71,10 @@ export default async function SyncPage() {
       <Section title="동기화 실행">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <form action={runImport}>
-            <button className="btn">⬇ 전체 가져오기 (시트 → LABi)</button>
+            <button className="btn">⬇ 전체 가져오기 (시트 → LABIS)</button>
           </form>
           <form action={runExport}>
-            <button className="btn" disabled={!sa}>⬆ 전체 내보내기 (LABi → 시트)</button>
+            <button className="btn" disabled={!sa}>⬆ 전체 내보내기 (LABIS → 시트)</button>
           </form>
         </div>
         <div className="flex flex-wrap gap-1.5">

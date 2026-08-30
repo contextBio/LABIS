@@ -1,4 +1,4 @@
-# LABi 공통 뼈대 (Core Skeleton) 플랜
+# LABIS 공통 뼈대 (Core Skeleton) 플랜
 
 > 2026-08-27 확정: 사용자 = **학과 + 여러 연구실** · 스택 = **Next.js + Postgres** · 진행 = 공통 뼈대부터
 
@@ -72,10 +72,10 @@ Setting     scope(dept|lab), lab_id?, key, value                          @@uniq
 
 ### 접속 도메인 관련 (2026-08-27 미결)
 
-요청된 `contextbio.ai/labi`는 **contextbio.ai DNS가 Firebase Hosting(199.36.158.100)을 가리키고 있어**
+요청된 `contextbio.ai/labis`는 **contextbio.ai DNS가 Firebase Hosting(199.36.158.100)을 가리키고 있어**
 이 서버(203.230.6.178)에서 직접 서빙 불가. 선택지:
 1. **labi.contextbio.ai 서브도메인** (권장) — DNS A 레코드만 추가하면 Apache vhost+certbot로 즉시 연결
-2. contextbio.ai/labi 경로 유지 — Firebase 쪽에서 /labi 리버스 프록시 구성 필요 (Cloud Run 경유 등, 복잡)
+2. contextbio.ai/labis 경로 유지 — Firebase 쪽에서 /labis 리버스 프록시 구성 필요 (Cloud Run 경유 등, 복잡)
 3. labi.sysmed.kr — 이 서버의 기존 도메인 체계 활용
 
 ### 운영 메모

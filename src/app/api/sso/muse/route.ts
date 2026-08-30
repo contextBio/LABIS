@@ -1,13 +1,13 @@
 /**
  * MUSE 세션 SSO — 같은 호스트(c1.sysmed.kr)의 muse_session 쿠키가 유효하면
- * 해당 c1 계정으로 LABi 세션을 발급하고 앱으로 보낸다.
+ * 해당 c1 계정으로 LABIS 세션을 발급하고 앱으로 보낸다.
  * 실패하면 로그인 폼으로(sso=off — 자동 재시도 루프 방지).
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { encode } from "next-auth/jwt";
 import { MUSE_COOKIE, verifyMuseToken, findOrCreateC1User } from "@/lib/muse";
 
-const BASE = "/labi";
+const BASE = "/labis";
 const SESSION_MAX_AGE = 12 * 3600; // MUSE 세션 TTL과 맞춘다
 
 export async function GET(req: NextRequest) {

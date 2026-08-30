@@ -27,7 +27,7 @@ export async function runExport() {
   const ctx = await requireLab("LAB_MANAGER");
   try {
     const log = await exportAll(ctx.labId);
-    await setLabSetting(ctx.labId, "sync_log", stamp(["✅ 내보내기 (LABi → 구글시트) 완료", ...log]));
+    await setLabSetting(ctx.labId, "sync_log", stamp(["✅ 내보내기 (LABIS → 구글시트) 완료", ...log]));
     await audit(ctx.user.id, ctx.labId, "sync.export", "sheet", "", { lines: log.length });
   } catch (e) {
     await setLabSetting(
@@ -48,7 +48,7 @@ export async function runImport(fd: FormData) {
     await setLabSetting(
       ctx.labId,
       "sync_log",
-      stamp([`✅ 가져오기 (구글시트 → LABi) 완료${tabs ? ` — ${tab}` : ""}`, ...log])
+      stamp([`✅ 가져오기 (구글시트 → LABIS) 완료${tabs ? ` — ${tab}` : ""}`, ...log])
     );
     await audit(ctx.user.id, ctx.labId, "sync.import", "sheet", tab || "all");
   } catch (e) {

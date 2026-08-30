@@ -1,4 +1,4 @@
-# LABi — Lab intelligence
+# LABIS — Lab Intelligence System
 
 학과·여러 연구실을 위한 연구 운영 시스템: **LIMS + 과제관리 + 인사관리** (한국어 UI, 멀티랩)
 
@@ -19,7 +19,7 @@ npm run build && npm run start    # 프로덕션 (포트 3100)
 - **인증·가입**: 초대 기반 (공개 가입 없음). 최초 접속 시 `/setup`에서 학과관리자 생성.
 - **MUSE 공동 로그인**: ① 로그인 폼에 c1 리눅스 계정명+암호 입력 시 MUSE와 같은 PAM
   헬퍼(muse-pam-verify)로 검증 후 자동 계정 생성·로그인. ② MUSE(c1.sysmed.kr:8443)에
-  로그인된 브라우저가 LABi에 오면 muse_session 쿠키를 검증해 **자동 SSO**(로그아웃
+  로그인된 브라우저가 LABIS에 오면 muse_session 쿠키를 검증해 **자동 SSO**(로그아웃
   직후는 제외). c1 계정 ↔ 기존 사용자 연결은 학과 관리 페이지에서. 구현: `src/lib/muse.ts`
   (itsdangerous 서명 호환 검증 — 시크릿 파일 공유, 서버 세션 저장소 없음).
 - **조직**: 학과(전역) → 연구실 × N → 구성원(Membership). 한 사용자가 여러 랩 소속 가능.
@@ -54,12 +54,12 @@ npm run ingest:watch      # 감시 모드 (기본 30초, --interval N)
 상시 서비스로 돌리려면 (systemd 예시):
 
 ```ini
-# /etc/systemd/system/labi-ingest.service
+# /etc/systemd/system/labis-ingest.service
 [Unit]
-Description=LABi folder ingest agent
+Description=LABIS folder ingest agent
 [Service]
 User=hg
-WorkingDirectory=/mnt/S1/sdata/agents/apps/LABi
+WorkingDirectory=/mnt/S1/sdata/agents/apps/LABIS
 Environment=PATH=/opt/node/bin:/usr/bin:/bin
 ExecStart=/opt/node/bin/npx tsx scripts/ingest-agent.ts --watch --interval 60
 Restart=on-failure

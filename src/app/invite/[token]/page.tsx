@@ -31,7 +31,7 @@ export default async function InvitePage({
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
       <div className="card w-full max-w-sm">
-        <div className="mb-4 text-center text-2xl font-black tracking-tight text-sky-700">LABi</div>
+        <div className="mb-4 text-center text-2xl font-black tracking-tight text-sky-700">LABIS</div>
         {invalid ? (
           <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">
             초대 링크가 유효하지 않거나 만료되었습니다. 관리자에게 재발급을 요청하세요.

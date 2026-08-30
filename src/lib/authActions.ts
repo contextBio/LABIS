@@ -9,7 +9,7 @@ import { prisma } from "./prisma";
 import { audit, requireUser, ACTIVE_LAB_COOKIE } from "./guard";
 
 // Auth.js의 redirectTo는 Next basePath를 인지하지 못하므로 절대 경로로 직접 붙인다
-const BASE = "/labi";
+const BASE = "/labis";
 
 function withBase(next: string): string {
   const path = next.startsWith("/") ? next : "/";

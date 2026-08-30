@@ -16,7 +16,7 @@ export default async function SetupPage({
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
       <div className="card w-full max-w-sm">
-        <div className="mb-2 text-center text-2xl font-black tracking-tight text-sky-700">LABi</div>
+        <div className="mb-2 text-center text-2xl font-black tracking-tight text-sky-700">LABIS</div>
         <h1 className="mb-1 text-center text-sm font-semibold text-slate-700">최초 설정</h1>
         <p className="mb-5 text-center text-xs text-slate-400">
           첫 번째 계정은 <b>학과관리자</b>로 생성됩니다.

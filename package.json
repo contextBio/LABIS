@@ -1,12 +1,12 @@
 {
-  "name": "labi",
+  "name": "labis",
   "version": "0.1.0",
   "private": true,
-  "description": "LABi (Lab intelligence) — 연구소 운영 시스템: LIMS + 과제관리 + 인사관리",
+  "description": "LABIS (Lab intelligence) — 연구소 운영 시스템: LIMS + 과제관리 + 인사관리",
   "scripts": {
-    "dev": "next dev -p 3100",
+    "dev": "next dev -p ${PORT:-3100}",
     "build": "next build",
-    "start": "next start -p 3100",
+    "start": "next start -p ${PORT:-3100}",
     "seed": "tsx src/db/seed.ts",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
