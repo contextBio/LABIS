@@ -45,3 +45,24 @@ AUTH_URL=https://contextbio.ai/api/auth
 
 비고: 프록시는 X-Forwarded-Host를 contextbio.ai로 설정하고, 오리진(c1.sysmed.kr)으로 나가는
 Location 헤더를 공개 도메인으로 교정한다. 비용은 트래픽 규모상 Cloud Run 무료 한도 내 예상.
+
+## 개발 사이트 변형 (dev-contextbio.web.app)
+
+현재 개발 배선은 **302 리다이렉트**다: dev-contextbio.web.app/LABIS → c1.sysmed.kr/labis-dev
+(주소창이 c1으로 넘어간다). 주소창까지 dev-contextbio.web.app 에 유지하려면 같은 이미지로
+서비스 하나를 더 올린다 — server.js 가 ORIGIN_HOST/PUBLIC_HOST 를 env 로 받으므로 코드 수정 없음:
+
+```bash
+gcloud run deploy labi-proxy-dev \
+  --source . \
+  --region asia-northeast3 \
+  --allow-unauthenticated \
+  --min-instances 0 --max-instances 2 \
+  --set-env-vars PUBLIC_HOST=dev-contextbio.web.app
+```
+
+배포 후 ContextBio 저장소 build_dev.py 의 dev 타깃 생성부에서 LABIS 리다이렉트 치환 대신
+rewrites 맨 앞에 `{"source": "/labis-dev{,/**}", "run": {"serviceId": "labi-proxy-dev",
+"region": "asia-northeast3"}}` 를 넣고, /LABIS·/labis 리다이렉트는 같은 사이트의
+/labis-dev 로(상대 경로) 바꾼다. LABIS 쪽 .env.development 는
+`APP_URL=https://dev-contextbio.web.app/labis-dev`, `AUTH_URL=https://dev-contextbio.web.app/api/auth` 로.
