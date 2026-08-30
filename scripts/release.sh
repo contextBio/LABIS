@@ -1,33 +1,51 @@
 #!/usr/bin/env bash
-# 릴리즈 배포: dev → main 머지 → 빌드 → 운영 서버(:3100) 재시작
-# dev 브랜치에서 개발을 마친 뒤 실행한다. 실행 후 브랜치는 dev로 복귀한다.
+# 릴리즈 배포 — 두-워크트리 구조 (브랜치 전환 없음).
+#
+#   bare 저장소   /mnt/S1/sdata/agents/ContextBio/LABIS.git
+#   dev  워크트리 /mnt/S1/sdata/agents/dev/LABIS        (dev 고정,  :3101, DB labi_dev)
+#   운영 워크트리 /mnt/S1/sdata/agents/ContextBio/LABIS (main 고정, :3100, DB labi)
+#
+# 흐름: dev 워크트리에서 검증을 마친 뒤 실행 —
+#   dev 푸시 → 운영 워크트리에서 main 에 dev 머지 → 버전 태그 → 의존성·빌드 → :3100 재시작.
+# 어느 워크트리도 브랜치를 갈아타지 않으므로 개발과 운영이 서로를 막지 않는다.
 set -euo pipefail
-cd "$(dirname "$0")/.."
-export PATH=/opt/node/bin:$PATH
+export PATH=/opt/node-v24.19.0-linux-x64/bin:/opt/node/bin:$PATH
 
-if [ -n "$(git status --porcelain)" ]; then
-  echo "오류: 커밋되지 않은 변경이 있습니다. 커밋 또는 스태시 후 다시 실행하세요." >&2
-  exit 1
-fi
+DEV_WT=${LABIS_DEV_WT:-/mnt/S1/sdata/agents/dev/LABIS}
+PROD_WT=${LABIS_PROD_WT:-/mnt/S1/sdata/agents/ContextBio/LABIS}
+DRY=${1:-}
 
-CUR=$(git rev-parse --abbrev-ref HEAD)
-if [ "$CUR" != "dev" ]; then
-  echo "오류: dev 브랜치에서 실행하세요. (현재: $CUR)" >&2
-  exit 1
-fi
+[ "$(git -C "$DEV_WT" rev-parse --abbrev-ref HEAD)" = "dev" ] \
+  || { echo "오류: dev 워크트리가 dev 브랜치가 아닙니다." >&2; exit 1; }
+[ -z "$(git -C "$DEV_WT" status --porcelain)" ] \
+  || { echo "오류: dev 워크트리에 커밋되지 않은 변경이 있습니다." >&2; exit 1; }
+[ "$(git -C "$PROD_WT" rev-parse --abbrev-ref HEAD)" = "main" ] \
+  || { echo "오류: 운영 워크트리가 main 브랜치가 아닙니다." >&2; exit 1; }
+[ -z "$(git -C "$PROD_WT" status --porcelain --untracked-files=no)" ] \
+  || { echo "오류: 운영 워크트리에 커밋되지 않은 변경이 있습니다." >&2; exit 1; }
+
+echo "==> 나갈 커밋:"
+git -C "$PROD_WT" --no-pager log --oneline main..dev | sed 's/^/    /'
+[ -z "$(git -C "$PROD_WT" log --oneline main..dev)" ] && echo "    (없음 — 이미 최신)"
+if [ "$DRY" = "--dry-run" ]; then echo "==> --dry-run 이라 여기까지."; exit 0; fi
 
 echo "==> dev 푸시"
-git push origin dev
+git -C "$DEV_WT" push origin dev 2>/dev/null || echo "  (푸시 실패 — 나중에 수동 푸시)"
 
-echo "==> main 머지"
-git checkout main
-git pull --ff-only origin main
-git merge --no-ff dev -m "release: dev 머지 ($(git log -1 --format=%h dev))"
-git push origin main
+if [ -n "$(git -C "$PROD_WT" log --oneline main..dev)" ]; then
+  echo "==> main 에 dev 머지 + 태그"
+  git -C "$PROD_WT" merge --no-ff dev -m "release: dev 머지 ($(git -C "$DEV_WT" log -1 --format=%h))"
+  TAG="release-$(date +%Y%m%d-%H%M)"
+  git -C "$PROD_WT" tag "$TAG"
+  git -C "$PROD_WT" push origin main "$TAG" 2>/dev/null \
+    || echo "  (푸시 실패 — 네트워크 확인 후 main·$TAG 수동 푸시)" >&2
+fi
 
-echo "==> 빌드"
+echo "==> 의존성·빌드 (운영 워크트리)"
+cd "$PROD_WT"
+npm ci --no-audit --no-fund
 npm run build
-# next build/dev가 next-env.d.ts·tsconfig.json의 distDir 참조를 오가며 고쳐 쓴다 — 릴리즈 후 원복
+# next build/dev 가 next-env.d.ts·tsconfig.json 을 고쳐 쓴다 — 릴리즈 후 원복
 git checkout -- next-env.d.ts tsconfig.json 2>/dev/null || true
 
 echo "==> 운영 서버 재시작 (:3100)"
@@ -36,10 +54,7 @@ sleep 2
 nohup npm run start >> "$HOME/labis-server.log" 2>&1 &
 sleep 3
 if curl -sf -o /dev/null http://localhost:3100/labis || curl -sf -o /dev/null http://localhost:3100; then
-  echo "==> 운영 서버 기동 확인"
+  echo "==> 운영 서버 기동 확인 (${TAG:-변경 없음})"
 else
   echo "경고: :3100 응답 없음 — $HOME/labis-server.log 확인 필요" >&2
 fi
-
-git checkout dev
-echo "==> 릴리즈 완료. 브랜치 dev로 복귀."
