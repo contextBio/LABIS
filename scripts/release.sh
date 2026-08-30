@@ -27,6 +27,8 @@ git push origin main
 
 echo "==> 빌드"
 npm run build
+# next build/dev가 next-env.d.ts·tsconfig.json의 distDir 참조를 오가며 고쳐 쓴다 — 릴리즈 후 원복
+git checkout -- next-env.d.ts tsconfig.json 2>/dev/null || true
 
 echo "==> 운영 서버 재시작 (:3100)"
 fuser -k 3100/tcp 2>/dev/null || true

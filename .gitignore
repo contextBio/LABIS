@@ -1,6 +1,7 @@
 node_modules/
 .next/
 .next-dev/
+tsconfig.tsbuildinfo
 data/*.db
 data/*.db-journal
 data/*.db-wal
