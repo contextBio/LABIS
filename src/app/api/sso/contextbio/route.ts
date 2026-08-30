@@ -13,7 +13,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { encode } from "next-auth/jwt";
 import { prisma } from "@/lib/prisma";
-import { verifyContextBioToken } from "@/lib/contextbio";
+import { mayUseLabis, verifyContextBioToken } from "@/lib/contextbio";
 
 const BASE = process.env.NEXT_BASE_PATH || "/labis";
 const SESSION_MAX_AGE = 12 * 3600;
@@ -31,6 +31,10 @@ export async function POST(req: NextRequest) {
   // 주소로 나가므로, 확인 없이 통과시키면 남의 초대를 가로챌 수 있다.
   if (!ident.emailVerified) {
     return NextResponse.json({ ok: false, error: "email_unverified" }, { status: 403 });
+  }
+  // apps 클레임이 있는 계정은 labis 가 들어 있어야 한다 (함대 공통 규칙).
+  if (!mayUseLabis(ident)) {
+    return NextResponse.json({ ok: false, error: "service_not_allowed" }, { status: 403 });
   }
 
   const user = await prisma.user.findUnique({ where: { email: ident.email } });
