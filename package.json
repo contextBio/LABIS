@@ -10,7 +10,9 @@
     "seed": "tsx src/db/seed.ts",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "ingest": "tsx scripts/ingest-agent.ts",
+    "ingest:watch": "tsx scripts/ingest-agent.ts --watch"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",
@@ -22,7 +24,8 @@
     "prisma": "6.19.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.11",

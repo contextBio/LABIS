@@ -33,6 +33,40 @@ npm run build && npm run start    # 프로덕션 (포트 3100)
   - 구글시트 연동 `/sync` — 랩별 시트 양방향 동기화 (인원 탭은 내보내기 전용)
   - 관리: `/admin/labs`(학과관리자), `/lab/members`(PI·랩매니저: 초대 링크)
 
+## 폴더 수집 에이전트 (파일 시트 → DB 구축)
+
+지정 폴더의 엑셀(.xlsx)/CSV 파일로 랩 DB를 구축/갱신한다. 매핑 규칙은 구글시트 동기화와 동일 —
+`.xlsx`는 **워크시트 이름**, `.csv`는 **파일 이름**이 탭명(과제/참여연구원/마일스톤/예산집행/시료/실험/장비/휴가)과
+일치하면 반영된다. 키 있는 엔티티는 갱신+추가, 관계형은 전체 교체. 인원 탭은 계정과 결합되어 건너뜀.
+변경된 파일만 재처리(mtime 추적, `--force`로 전체 재처리), 결과는 감사 로그에 남는다.
+
+```bash
+# 1회 반영
+npm run ingest -- --dir /path/to/폴더 --lab 2
+
+# 폴더↔랩 매핑 등록 후 등록분 전체 실행 (다른 폴더·다른 랩도 등록만 하면 됨)
+npm run ingest -- --add-source /path/to/A랩폴더 2 "A랩"
+npm run ingest -- --add-source /path/to/B랩폴더 5 "B랩"
+npm run ingest            # 등록된 소스 전부 1회
+npm run ingest:watch      # 감시 모드 (기본 30초, --interval N)
+```
+
+상시 서비스로 돌리려면 (systemd 예시):
+
+```ini
+# /etc/systemd/system/labi-ingest.service
+[Unit]
+Description=LABi folder ingest agent
+[Service]
+User=hg
+WorkingDirectory=/mnt/S1/sdata/agents/apps/LABi
+Environment=PATH=/opt/node/bin:/usr/bin:/bin
+ExecStart=/opt/node/bin/npx tsx scripts/ingest-agent.ts --watch --interval 60
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target
+```
+
 ## 기술 스택
 
 - Next.js 15 (App Router, Server Actions) + TypeScript + Tailwind CSS 4
