@@ -3,22 +3,27 @@
 학과·여러 연구실을 위한 연구 운영 시스템 (한국어 UI, 멀티랩).
 관리 항목: **인사 · 과제 · 연구비(수지 분석) · 성과(논문/특허/기술이전) · 구매 · 장비** + LIMS(시료·실험)
 
-## 브랜치·배포 구조 (dev / main 분리)
+## 브랜치·배포 구조 (dev / main 분리, 단일 디렉터리)
 
-| | 브랜치 | 위치 | 포트 | DB |
+저장소: https://github.com/contextBio/LABIS — 작업 디렉터리는 `/mnt/S1/sdata/agents/apps/LABIS` 하나이며,
+평소에는 **dev 브랜치를 체크아웃**한 상태로 개발한다.
+
+| | 브랜치 | 포트 | DB | 배포 URL |
 |---|---|---|---|---|
-| 운영 | `main` | `/mnt/S1/sdata/agents/apps/LABIS` | 3100 (→ https://c1.sysmed.kr/labis) | `labi` |
-| 개발 | `dev` | `/mnt/S1/sdata/agents/apps/LABIS-dev` (git worktree) | 3101 | `labi_dev` (운영 복제본) |
+| 운영(릴리즈) | `main` | 3100 | `labi` | https://contextbio.ai/LABIS (→ c1.sysmed.kr/labis) |
+| 개발 | `dev` | 3101 | `labi_dev` (운영 복제본) | https://dev-contextbio.web.app/LABIS |
 
-개발 흐름: **LABIS-dev에서 작업·커밋(dev)** → 검증 후 운영 폴더에서
-`git merge dev && npm run build && 재시작`. 스키마 변경 시 dev에서 `npm run db:migrate`로
-마이그레이션을 만들고, 운영 머지 후 `npm run db:deploy`.
+- 개발 서버(`npm run dev`, :3101)는 `.env.development`를 로드해 `labi_dev` DB를 쓴다.
+- 운영 서버(`npm run build && npm run start`, :3100)는 `.env`의 `labi` DB를 쓴다.
+- 스키마 변경 시 dev에서 `npm run db:migrate`로 마이그레이션을 만들고, 릴리즈 후 `npm run db:deploy`.
 
 ```bash
-# 개발 서버
-cd /mnt/S1/sdata/agents/apps/LABIS-dev && PORT=3101 npm run dev
-# 운영 배포
-cd /mnt/S1/sdata/agents/apps/LABIS && git merge dev && npm run db:deploy && npm run build && (재시작)
+# 개발: dev 브랜치에서 작업·커밋 후
+npm run dev                # :3101, labi_dev DB
+git push origin dev
+
+# 릴리즈: dev → main 머지 + 빌드 + :3100 재시작 (끝나면 dev로 복귀)
+./scripts/release.sh
 ```
 
 ## 실행

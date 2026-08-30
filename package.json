@@ -4,7 +4,7 @@
   "private": true,
   "description": "LABIS (Lab intelligence) — 연구소 운영 시스템: LIMS + 과제관리 + 인사관리",
   "scripts": {
-    "dev": "next dev -p ${PORT:-3100}",
+    "dev": "next dev -p ${PORT:-3101}",
     "build": "next build",
     "start": "next start -p ${PORT:-3100}",
     "seed": "tsx src/db/seed.ts",
