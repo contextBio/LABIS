@@ -1,54 +1,25 @@
 import { requireUser } from "@/lib/guard";
-import { changePasswordAction } from "@/lib/accountActions";
 import { PageHeader, Section } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
-export default async function AccountPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | undefined>>;
-}) {
+export default async function AccountPage() {
   const user = await requireUser();
-  const sp = await searchParams;
+  // 계정(비밀번호·프로필·보안)은 contextBio 통합 계정이 관리한다 —
+  // LABIS 에는 자체 로그인이 없으므로 여기서 바꿀 비밀번호도 없다.
+  const site = (process.env.CONTEXTBIO_SITE_URL || "https://contextbio.ai").replace(/\/+$/, "");
 
   return (
     <div className="max-w-md">
       <PageHeader title="내 계정" desc={`${user.name} · ${user.email}`} />
-      <Section title="비밀번호 변경">
-        {sp.error === "wrong" && (
-          <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">
-            현재 비밀번호가 올바르지 않습니다.
-          </p>
-        )}
-        {sp.error === "invalid" && (
-          <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">
-            새 비밀번호는 8자 이상이어야 합니다.
-          </p>
-        )}
-        {sp.ok === "1" && (
-          <p className="mb-3 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-            비밀번호가 변경되었습니다.
-          </p>
-        )}
-        <form action={changePasswordAction} className="space-y-3">
-          <input
-            name="current"
-            type="password"
-            required
-            placeholder="현재 비밀번호"
-            className="inp"
-          />
-          <input
-            name="next"
-            type="password"
-            required
-            minLength={8}
-            placeholder="새 비밀번호 (8자 이상)"
-            className="inp"
-          />
-          <button className="btn justify-center">변경</button>
-        </form>
+      <Section title="계정 관리">
+        <p className="text-sm text-slate-600">
+          LABIS 는 contextBio 통합 계정으로 로그인합니다. 비밀번호 변경·프로필 등
+          계정 관리는 통합 계정 화면에서 합니다.
+        </p>
+        <a className="btn mt-3 inline-flex" href={`${site}/login`} target="_blank" rel="noreferrer">
+          contextBio 계정 관리로 이동
+        </a>
       </Section>
     </div>
   );

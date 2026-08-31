@@ -35,23 +35,18 @@ npm run db:deploy                 # Prisma 마이그레이션 적용
 npm run build && npm run start    # 프로덕션 (포트 3100)
 ```
 
-`.env` 필수 값: `DATABASE_URL`(Postgres), `AUTH_SECRET`, `APP_URL`. 선택: `AUTH_GOOGLE_ID/SECRET`(구글 로그인),
-`GOOGLE_SERVICE_ACCOUNT_FILE`(시트 양방향 동기화, 기본 `data/service-account.json`).
+`.env` 필수 값: `DATABASE_URL`(Postgres), `AUTH_SECRET`, `APP_URL`. 선택: `GOOGLE_SERVICE_ACCOUNT_FILE`(시트 양방향 동기화, 기본 `data/service-account.json`).
 
 ## 구조
 
-- **인증·가입**: **contextBio 통합 계정이 유일한 정규 로그인** (2026-08-31 전환).
+- **인증·가입**: **로그인은 contextBio 통합 계정 하나다 — 다른 앱과 동일한 방식**
+  (2026-08-31, 자체 로그인 전면 삭제: 이메일+비밀번호·Google·MUSE c1 계정 경로 제거).
   초대 기반 (공개 가입 없음) — 관리자가 초대한 이메일의 통합 계정만 통과한다.
-  구현: `src/lib/contextbio.ts`(토큰 검증 — 폐기·클레임 포함) + `/api/sso/contextbio`.
-  최초 접속 시 `/setup`에서 학과관리자 생성(부트스트랩 때는 `LABIS_LOCAL_LOGIN=on`).
-- **MUSE 공동 로그인 (별개 서비스 — 통합 전환과 무관하게 유지)**: ① 로그인 폼에
-  c1 리눅스 계정명+암호 입력 시 MUSE와 같은 PAM 헬퍼(muse-pam-verify)로 검증 후
-  자동 계정 생성·로그인. ② MUSE(c1.sysmed.kr:8443)에 로그인된 브라우저가 LABIS에
-  오면 muse_session 쿠키를 검증해 **자동 SSO**(로그아웃 직후는 제외). c1 계정 ↔
-  기존 사용자 연결은 학과 관리 페이지에서. 구현: `src/lib/muse.ts`
-  (itsdangerous 서명 호환 검증 — 시크릿 파일 공유, 서버 세션 저장소 없음).
-- **비상 게이트**: LABIS 자체 이메일+비밀번호와 Google 은 `LABIS_LOCAL_LOGIN=on`
-  일 때만 켜진다 (기본 꺼짐). 화면과 Auth.js `authorize` 가 함께 게이트된다.
+  구현: `src/lib/contextbio.ts`(토큰 검증 — 폐기·클레임 포함) + `/api/sso/contextbio`
+  가 검증 후 Auth.js JWT 세션을 직접 굽는다. 비밀번호는 어디에도 없다 — 계정 관리
+  (비밀번호·프로필)는 contextBio 화면에서 한다. 최초 접속 시 `/setup`은 학과관리자
+  **레코드만** 만들고, 로그인은 같은 이메일의 통합 계정으로 한다.
+  MUSE(c1 서버 사용자 관리)는 별개 서비스다 — LABIS 의 로그인 수단이 아니다.
 - **조직**: 학과(전역) → 연구실 × N → 구성원(Membership). 한 사용자가 여러 랩 소속 가능.
 - **권한**: 학과관리자 / PI / 랩매니저 / 연구원. 모든 페이지·액션은 서버 가드(`requireLab`)로
   활성 랩(사이드바 전환기) + 역할을 검증. 관리 행위는 감사 로그 기록.
@@ -101,7 +96,7 @@ WantedBy=multi-user.target
 
 - Next.js 15 (App Router, Server Actions) + TypeScript + Tailwind CSS 4
 - PostgreSQL 17 (S1 네이티브) + Prisma 6.19.3 — 스키마 `prisma/schema.prisma`
-- Auth.js v5 (JWT 세션, Credentials + Google 옵션)
+- Auth.js v5 (JWT 세션 — 프로바이더 없음, contextBio SSO 가 세션을 발급)
 
 ## 코드 맵
 
