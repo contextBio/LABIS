@@ -41,6 +41,13 @@ if [ -n "$(git -C "$PROD_WT" log --oneline main..dev)" ]; then
     || echo "  (푸시 실패 — 네트워크 확인 후 main·$TAG 수동 푸시)" >&2
 fi
 
+# 서버를 먼저 내린다 — npm ci 는 node_modules 를 통째로 지우는데, 구동 중인
+# 서버가 .prisma/client 등을 물고 있으면 ENOTEMPTY 로 죽는다 (2026-09-01 실측).
+# 내려간 동안(의존성+빌드, 수 분)은 계획된 릴리즈 중단이다.
+echo "==> 운영 서버 정지 (:3100)"
+fuser -k 3100/tcp 2>/dev/null || true
+sleep 2
+
 echo "==> 의존성·빌드 (운영 워크트리)"
 cd "$PROD_WT"
 npm ci --no-audit --no-fund
@@ -48,9 +55,7 @@ npm run build
 # next build/dev 가 next-env.d.ts·tsconfig.json 을 고쳐 쓴다 — 릴리즈 후 원복
 git checkout -- next-env.d.ts tsconfig.json 2>/dev/null || true
 
-echo "==> 운영 서버 재시작 (:3100)"
-fuser -k 3100/tcp 2>/dev/null || true
-sleep 2
+echo "==> 운영 서버 시작 (:3100)"
 nohup npm run start >> "$HOME/labis-server.log" 2>&1 &
 sleep 3
 if curl -sf -o /dev/null http://localhost:3100/labis || curl -sf -o /dev/null http://localhost:3100; then
