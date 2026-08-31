@@ -13,11 +13,14 @@ export default function ContextBioSignIn({
   loginUrl,
   next,
   postUrl,
+  primary = false,
 }: {
   loginUrl: string;
   next: string;
   /** 기본 경로가 운영(/labis)과 개발(/labis-dev)에서 다르므로 서버가 정해 준다. */
   postUrl: string;
+  /** 통합 계정이 유일한 정규 로그인일 때 주 버튼 모양으로 그린다. */
+  primary?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -66,7 +69,7 @@ export default function ContextBioSignIn({
           setBusy(true);
           window.location.href = loginUrl;
         }}
-        className="btn-ghost w-full justify-center !py-2"
+        className={primary ? "btn w-full justify-center" : "btn-ghost w-full justify-center !py-2"}
       >
         {busy ? "확인 중…" : "contextBio 계정으로 로그인"}
       </button>

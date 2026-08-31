@@ -4,7 +4,16 @@ import Google from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 
-const providers: NextAuthConfig["providers"] = [
+// LABIS 는 contextBio 통합 계정이 유일한 정규 로그인이다 (2026-08-31 전환).
+// 아래 로컬 수단(이메일+비밀번호·c1 계정·Google)은 비상용이다 — 통합 계정이
+// 동작하지 않을 때(Firebase 장애·최초 구축 부트스트랩)만 LABIS_LOCAL_LOGIN=on
+// 으로 켠다. UI 만 감추면 /api/auth 콜백으로 여전히 뚫리므로 프로바이더 자체를
+// 게이트한다.
+const localLogin = (process.env.LABIS_LOCAL_LOGIN || "").toLowerCase() === "on";
+
+const providers: NextAuthConfig["providers"] = [];
+
+if (localLogin) providers.push(
   Credentials({
     name: "이메일 로그인",
     credentials: {
@@ -32,10 +41,10 @@ const providers: NextAuthConfig["providers"] = [
       return { id: user.id, email: user.email, name: user.name, image: user.image };
     },
   }),
-];
+);
 
-// Google OAuth는 클라이언트 ID가 설정된 경우에만 활성화 (초대 기반: 기존 사용자만 통과)
-if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
+// Google OAuth도 비상 게이트 안에서만 — 클라이언트 ID가 설정된 경우 (초대 기반: 기존 사용자만 통과)
+if (localLogin && process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
   providers.push(Google({ allowDangerousEmailAccountLinking: true }));
 }
 

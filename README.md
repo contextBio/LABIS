@@ -40,11 +40,14 @@ npm run build && npm run start    # 프로덕션 (포트 3100)
 
 ## 구조
 
-- **인증·가입**: 초대 기반 (공개 가입 없음). 최초 접속 시 `/setup`에서 학과관리자 생성.
-- **MUSE 공동 로그인**: ① 로그인 폼에 c1 리눅스 계정명+암호 입력 시 MUSE와 같은 PAM
-  헬퍼(muse-pam-verify)로 검증 후 자동 계정 생성·로그인. ② MUSE(c1.sysmed.kr:8443)에
-  로그인된 브라우저가 LABIS에 오면 muse_session 쿠키를 검증해 **자동 SSO**(로그아웃
-  직후는 제외). c1 계정 ↔ 기존 사용자 연결은 학과 관리 페이지에서. 구현: `src/lib/muse.ts`
+- **인증·가입**: **contextBio 통합 계정이 유일한 정규 로그인** (2026-08-31 전환).
+  초대 기반 (공개 가입 없음) — 관리자가 초대한 이메일의 통합 계정만 통과한다.
+  구현: `src/lib/contextbio.ts`(토큰 검증 — 폐기·클레임 포함) + `/api/sso/contextbio`.
+  최초 접속 시 `/setup`에서 학과관리자 생성(부트스트랩 때는 `LABIS_LOCAL_LOGIN=on`).
+- **비상·이행용 게이트**: 로컬 수단(이메일+비밀번호, c1 계정 PAM, Google)은
+  `LABIS_LOCAL_LOGIN=on`, MUSE 자동 SSO(muse_session 쿠키)는 `LABIS_MUSE_SSO=on`
+  일 때만 켜진다 — 기본은 모두 꺼짐. UI 와 Auth.js 프로바이더가 함께 게이트된다.
+  c1 계정 ↔ 기존 사용자 연결은 학과 관리 페이지에서. 구현: `src/lib/muse.ts`
   (itsdangerous 서명 호환 검증 — 시크릿 파일 공유, 서버 세션 저장소 없음).
 - **조직**: 학과(전역) → 연구실 × N → 구성원(Membership). 한 사용자가 여러 랩 소속 가능.
 - **권한**: 학과관리자 / PI / 랩매니저 / 연구원. 모든 페이지·액션은 서버 가드(`requireLab`)로
