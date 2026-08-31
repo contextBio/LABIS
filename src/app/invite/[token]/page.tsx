@@ -29,7 +29,7 @@ export default async function InvitePage({
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+    <div className="flex min-h-[calc(100vh-2.25rem)] items-center justify-center bg-slate-50 px-4">
       <div className="card w-full max-w-sm">
         <div className="mb-4 text-center text-2xl font-black tracking-tight text-sky-700">LABIS</div>
         {invalid ? (

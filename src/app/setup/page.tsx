@@ -14,7 +14,7 @@ export default async function SetupPage({
   if (userCount > 0) redirect("/login");
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+    <div className="flex min-h-[calc(100vh-2.25rem)] items-center justify-center bg-slate-50 px-4">
       <div className="card w-full max-w-sm">
         <div className="mb-2 text-center text-2xl font-black tracking-tight text-sky-700">LABIS</div>
         <h1 className="mb-1 text-center text-sm font-semibold text-slate-700">최초 설정</h1>
