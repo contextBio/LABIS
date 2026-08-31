@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LABIS — Lab Intelligence System</title>
+<!-- 이 페이지는 contextbio.ai/labis 에 정적으로 실리는 LABIS 프론트다.
+     백엔드 주소의 정본은 cb-backend 메타 — 통합 사이트 빌드(build_subapp.py)가
+     배포처마다 채운다 (본 사이트=c1 …/labis, 개발 미러=…/labis-dev).
+     (태그 표기를 주석에 그대로 적으면 빌드의 주입 감지에 걸린다 — 적지 말 것)
+     연구실 목록은 백엔드 공개 API(/api/labs)에서 가져오고, 제출하면 백엔드의
+     /enter?lab=<id> 로 이동한다 — 로그인·권한 검증은 전부 백엔드가 한다. -->
+<style>
+  :root{
+    --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --bg:#f8fafc;
+    --brand:#0369a1; --brand-strong:#075985;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Noto Sans KR",Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
+       background:var(--bg);color:var(--ink);min-height:100vh;display:flex;
+       align-items:center;justify-content:center;padding:24px}
+  .card{width:100%;max-width:400px;background:#fff;border:1px solid var(--line);
+        border-radius:14px;padding:36px 32px;box-shadow:0 1px 3px rgba(15,23,42,.06)}
+  .brand{text-align:center;margin-bottom:6px;font-size:30px;font-weight:900;
+         letter-spacing:-.02em;color:var(--brand)}
+  .tagline{text-align:center;font-size:12.5px;color:var(--muted);margin-bottom:26px}
+  label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:0 0 6px}
+  select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;
+         background:#fff;color:var(--ink);font-size:14px;font-family:inherit}
+  select:disabled{color:var(--muted);background:var(--bg)}
+  button{width:100%;margin-top:14px;padding:11px 12px;border:0;border-radius:9px;
+         background:var(--brand);color:#fff;font-size:14.5px;font-weight:700;
+         font-family:inherit;cursor:pointer}
+  button:hover{background:var(--brand-strong)}
+  .hint{margin-top:16px;text-align:center;font-size:11.5px;line-height:1.7;color:var(--muted)}
+  .feats{margin:0 0 22px;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px;
+         justify-content:center}
+  .feats li{font-size:11px;color:var(--muted);border:1px solid var(--line);
+            border-radius:999px;padding:3px 10px;background:var(--bg)}
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand">LABIS</div>
+    <p class="tagline">Lab Intelligence System — 연구실·학과 운영 관리</p>
+    <ul class="feats">
+      <li>인사</li><li>과제</li><li>연구비</li><li>성과</li><li>구매</li><li>장비</li><li>LIMS</li>
+    </ul>
+
+    <form id="enterForm">
+      <label for="labSelect">연구실 선택</label>
+      <select id="labSelect" disabled>
+        <option value="">연구실 목록을 불러오는 중…</option>
+      </select>
+      <button type="submit">LABIS 입장</button>
+    </form>
+
+    <p class="hint">
+      contextBio 통합 계정으로 로그인합니다.<br>
+      접근 권한은 관리자의 초대로 부여됩니다.
+    </p>
+  </main>
+
+<script>
+(function () {
+  "use strict";
+  // 백엔드 주소의 정본 — 빌드가 채우는 cb-backend 메타 (공통 규약)
+  var meta = document.querySelector('meta[name="cb-backend"]');
+  var BACKEND = ((meta && meta.getAttribute("content")) || "https://c1.sysmed.kr/labis")
+    .trim().replace(/\/+$/, "");
+
+  var sel = document.getElementById("labSelect");
+
+  fetch(BACKEND + "/api/labs")
+    .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+    .then(function (d) {
+      var labs = (d && d.labs) || [];
+      sel.innerHTML = "";
+      var any = document.createElement("option");
+      any.value = ""; any.textContent = labs.length ? "— 연구실을 고르세요 —" : "(등록된 연구실 없음)";
+      sel.appendChild(any);
+      labs.forEach(function (l) {
+        var o = document.createElement("option");
+        o.value = String(l.id); o.textContent = l.name;
+        sel.appendChild(o);
+      });
+      sel.disabled = false;
+    })
+    .catch(function () {
+      // 목록을 못 가져와도 입장은 막지 않는다 — 랩 선택은 편의일 뿐, 권한은 백엔드가 정한다.
+      sel.innerHTML = '<option value="">목록을 불러오지 못했습니다 — 그대로 입장하세요</option>';
+      sel.disabled = false;
+    });
+
+  document.getElementById("enterForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var lab = sel.value;
+    location.href = BACKEND + "/enter" + (lab ? "?lab=" + encodeURIComponent(lab) : "");
+  });
+})();
+</script>
+</body>
+</html>

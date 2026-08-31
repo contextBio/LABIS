@@ -3,22 +3,27 @@
 학과·여러 연구실을 위한 연구 운영 시스템 (한국어 UI, 멀티랩).
 관리 항목: **인사 · 과제 · 연구비(수지 분석) · 성과(논문/특허/기술이전) · 구매 · 장비** + LIMS(시료·실험)
 
-## 브랜치·배포 구조 (dev / main 분리)
+## 브랜치·배포 구조 (dev / main 분리, 단일 디렉터리)
 
-| | 브랜치 | 위치 | 포트 | DB |
+저장소: https://github.com/contextBio/LABIS — 작업 디렉터리는 `/mnt/S1/sdata/agents/apps/LABIS` 하나이며,
+평소에는 **dev 브랜치를 체크아웃**한 상태로 개발한다.
+
+| | 브랜치 | 포트 | DB | 배포 URL |
 |---|---|---|---|---|
-| 운영 | `main` | `/mnt/S1/sdata/agents/apps/LABIS` | 3100 (→ https://c1.sysmed.kr/labis) | `labi` |
-| 개발 | `dev` | `/mnt/S1/sdata/agents/apps/LABIS-dev` (git worktree) | 3101 | `labi_dev` (운영 복제본) |
+| 운영(릴리즈) | `main` | 3100 | `labi` | https://contextbio.ai/LABIS (→ c1.sysmed.kr/labis) |
+| 개발 | `dev` | 3101 | `labi_dev` (운영 복제본) | https://dev-contextbio.web.app/LABIS |
 
-개발 흐름: **LABIS-dev에서 작업·커밋(dev)** → 검증 후 운영 폴더에서
-`git merge dev && npm run build && 재시작`. 스키마 변경 시 dev에서 `npm run db:migrate`로
-마이그레이션을 만들고, 운영 머지 후 `npm run db:deploy`.
+- 개발 서버(`npm run dev`, :3101)는 `.env.development`를 로드해 `labi_dev` DB를 쓴다.
+- 운영 서버(`npm run build && npm run start`, :3100)는 `.env`의 `labi` DB를 쓴다.
+- 스키마 변경 시 dev에서 `npm run db:migrate`로 마이그레이션을 만들고, 릴리즈 후 `npm run db:deploy`.
 
 ```bash
-# 개발 서버
-cd /mnt/S1/sdata/agents/apps/LABIS-dev && PORT=3101 npm run dev
-# 운영 배포
-cd /mnt/S1/sdata/agents/apps/LABIS && git merge dev && npm run db:deploy && npm run build && (재시작)
+# 개발: dev 브랜치에서 작업·커밋 후
+npm run dev                # :3101, labi_dev DB
+git push origin dev
+
+# 릴리즈: dev → main 머지 + 빌드 + :3100 재시작 (끝나면 dev로 복귀)
+./scripts/release.sh
 ```
 
 ## 실행
@@ -30,17 +35,18 @@ npm run db:deploy                 # Prisma 마이그레이션 적용
 npm run build && npm run start    # 프로덕션 (포트 3100)
 ```
 
-`.env` 필수 값: `DATABASE_URL`(Postgres), `AUTH_SECRET`, `APP_URL`. 선택: `AUTH_GOOGLE_ID/SECRET`(구글 로그인),
-`GOOGLE_SERVICE_ACCOUNT_FILE`(시트 양방향 동기화, 기본 `data/service-account.json`).
+`.env` 필수 값: `DATABASE_URL`(Postgres), `AUTH_SECRET`, `APP_URL`. 선택: `GOOGLE_SERVICE_ACCOUNT_FILE`(시트 양방향 동기화, 기본 `data/service-account.json`).
 
 ## 구조
 
-- **인증·가입**: 초대 기반 (공개 가입 없음). 최초 접속 시 `/setup`에서 학과관리자 생성.
-- **MUSE 공동 로그인**: ① 로그인 폼에 c1 리눅스 계정명+암호 입력 시 MUSE와 같은 PAM
-  헬퍼(muse-pam-verify)로 검증 후 자동 계정 생성·로그인. ② MUSE(c1.sysmed.kr:8443)에
-  로그인된 브라우저가 LABIS에 오면 muse_session 쿠키를 검증해 **자동 SSO**(로그아웃
-  직후는 제외). c1 계정 ↔ 기존 사용자 연결은 학과 관리 페이지에서. 구현: `src/lib/muse.ts`
-  (itsdangerous 서명 호환 검증 — 시크릿 파일 공유, 서버 세션 저장소 없음).
+- **인증·가입**: **로그인은 contextBio 통합 계정 하나다 — 다른 앱과 동일한 방식**
+  (2026-08-31, 자체 로그인 전면 삭제: 이메일+비밀번호·Google·MUSE c1 계정 경로 제거).
+  초대 기반 (공개 가입 없음) — 관리자가 초대한 이메일의 통합 계정만 통과한다.
+  구현: `src/lib/contextbio.ts`(토큰 검증 — 폐기·클레임 포함) + `/api/sso/contextbio`
+  가 검증 후 Auth.js JWT 세션을 직접 굽는다. 비밀번호는 어디에도 없다 — 계정 관리
+  (비밀번호·프로필)는 contextBio 화면에서 한다. 최초 접속 시 `/setup`은 학과관리자
+  **레코드만** 만들고, 로그인은 같은 이메일의 통합 계정으로 한다.
+  MUSE(c1 서버 사용자 관리)는 별개 서비스다 — LABIS 의 로그인 수단이 아니다.
 - **조직**: 학과(전역) → 연구실 × N → 구성원(Membership). 한 사용자가 여러 랩 소속 가능.
 - **권한**: 학과관리자 / PI / 랩매니저 / 연구원. 모든 페이지·액션은 서버 가드(`requireLab`)로
   활성 랩(사이드바 전환기) + 역할을 검증. 관리 행위는 감사 로그 기록.
@@ -90,7 +96,7 @@ WantedBy=multi-user.target
 
 - Next.js 15 (App Router, Server Actions) + TypeScript + Tailwind CSS 4
 - PostgreSQL 17 (S1 네이티브) + Prisma 6.19.3 — 스키마 `prisma/schema.prisma`
-- Auth.js v5 (JWT 세션, Credentials + Google 옵션)
+- Auth.js v5 (JWT 세션 — 프로바이더 없음, contextBio SSO 가 세션을 발급)
 
 ## 코드 맵
 

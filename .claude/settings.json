@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Bash(ls *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(rg *)",
+      "Bash(wc *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(stat *)",
+      "Bash(file *)",
+      "Bash(du -sh *)",
+      "Bash(df -h*)",
+      "Bash(readlink *)",
+      "Bash(realpath *)",
+      "Bash(tree *)",
+      "Bash(sqlite3 * .schema)",
+      "Bash(curl -s localhost:*)",
+      "Bash(curl -i localhost:*)",
+      "Bash(curl -sI localhost:*)",
+      "Bash(curl -s 127.0.0.1:*)",
+      "Bash(curl -i 127.0.0.1:*)",
+      "Bash(systemctl status *)",
+      "Bash(systemctl --user status *)",
+      "Bash(journalctl --user *)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git remote -v)",
+      "Bash(/usr/bin/python3 -c *)",
+      "Bash(/usr/bin/python3 -m pip show *)",
+      "Bash(/usr/bin/python3 -m pip list*)",
+      "Bash(/usr/bin/python3 -m py_compile *)"
+    ],
+    "deny": [
+      "Edit(/mnt/S1/sdata/agents/obsolete/**)",
+      "Write(/mnt/S1/sdata/agents/obsolete/**)"
+    ]
+  }
+}

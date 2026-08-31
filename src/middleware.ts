@@ -2,7 +2,10 @@ import { NextResponse, type NextRequest } from "next/server";
 
 // 가벼운 1차 관문: 세션 쿠키가 없으면 로그인으로.
 // 실제 검증·권한 확인은 서버 컴포넌트/액션의 guard(requireUser 등)에서 수행한다.
-const PUBLIC_PREFIXES = ["/login", "/setup", "/invite", "/api/auth", "/api/sso"];
+// /enter 는 프론트 페이지의 입장 지점 — 자기 라우트가 로그인 여부를 직접 다루며
+// lab 파라미터를 next 에 온전히 실어 보낸다(여기서 가로채면 lab 이 유실된다).
+// /api/labs 는 공개 목록 — 가로채면 프론트의 fetch 가 로그인 HTML 을 받는다.
+const PUBLIC_PREFIXES = ["/login", "/setup", "/invite", "/api/auth", "/api/sso", "/api/labs", "/enter"];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

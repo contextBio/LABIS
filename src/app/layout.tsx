@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import ContextBioTopBar from "@/components/ContextBioTopBar";
 
 export const metadata: Metadata = {
   title: "LABIS — Lab Intelligence System",
@@ -9,7 +10,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ko">
-      <body>{children}</body>
+      <body>
+        {/* contextBio 공통 상단 바 — 다른 앱들과 같은 자리, 같은 구성 */}
+        <ContextBioTopBar />
+        {children}
+      </body>
     </html>
   );
 }

@@ -29,7 +29,7 @@ export default async function InvitePage({
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+    <div className="flex min-h-[calc(100vh-2.25rem)] items-center justify-center bg-slate-50 px-4">
       <div className="card w-full max-w-sm">
         <div className="mb-4 text-center text-2xl font-black tracking-tight text-sky-700">LABIS</div>
         {invalid ? (
@@ -46,41 +46,23 @@ export default async function InvitePage({
             </p>
             {sp.error === "invalid" && (
               <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">
-                입력을 확인하세요. 비밀번호는 8자 이상이어야 합니다.
+                이름을 입력하세요.
               </p>
             )}
             <form action={acceptInviteAction} className="space-y-3">
               <input type="hidden" name="token" value={token} />
-              {existingUser && existingUser.passwordHash ? (
+              {existingUser ? (
                 <p className="rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-700">
                   기존 계정({existingUser.name})에 랩 소속이 추가됩니다.
                 </p>
               ) : (
-                <>
-                  {existingUser && (
-                    <p className="rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-700">
-                      등록된 프로필({existingUser.name})에 로그인 비밀번호를 설정합니다.
-                    </p>
-                  )}
-                  <input
-                    name="name"
-                    required={!existingUser}
-                    defaultValue={existingUser?.name ?? ""}
-                    placeholder="이름"
-                    className="inp"
-                  />
-                  <input
-                    name="password"
-                    type="password"
-                    required
-                    minLength={8}
-                    placeholder="비밀번호 (8자 이상)"
-                    className="inp"
-                  />
-                </>
+                <input name="name" required placeholder="이름" className="inp" />
               )}
               <button className="btn w-full justify-center">초대 수락</button>
             </form>
+            <p className="mt-4 text-center text-xs text-slate-400">
+              수락 후 이 이메일의 contextBio 통합 계정으로 로그인합니다.
+            </p>
           </>
         )}
       </div>

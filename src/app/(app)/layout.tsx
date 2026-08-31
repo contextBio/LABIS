@@ -76,7 +76,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   );
 
   return (
-    <div className="flex min-h-screen flex-col lg:flex-row">
+    <div className="flex min-h-[calc(100vh-2.25rem)] flex-col lg:flex-row">
       {/* 데스크톱 사이드바 */}
       <aside className="hidden w-56 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
         <div className="px-5 py-5">
