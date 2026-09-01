@@ -5,7 +5,9 @@ import { NextResponse, type NextRequest } from "next/server";
 // /enter 는 프론트 페이지의 입장 지점 — 자기 라우트가 로그인 여부를 직접 다루며
 // lab 파라미터를 next 에 온전히 실어 보낸다(여기서 가로채면 lab 이 유실된다).
 // /api/labs 는 공개 목록 — 가로채면 프론트의 fetch 가 로그인 HTML 을 받는다.
-const PUBLIC_PREFIXES = ["/login", "/setup", "/invite", "/api/auth", "/api/sso", "/api/labs", "/enter"];
+// /api/v1 은 SPA 프론트용 REST — 세션 쿠키가 아니라 Bearer 토큰이라 apiGuard 가
+// 요청마다 직접 검증한다.
+const PUBLIC_PREFIXES = ["/login", "/setup", "/invite", "/api/auth", "/api/sso", "/api/labs", "/api/v1", "/enter"];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

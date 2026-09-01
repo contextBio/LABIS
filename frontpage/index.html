@@ -4,112 +4,165 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LABIS — Lab Intelligence System</title>
-<!-- 이 페이지는 contextbio.ai/labis 에 정적으로 실리는 LABIS 프론트다.
-     백엔드 주소의 정본은 cb-backend 메타 — 통합 사이트 빌드(build_subapp.py)가
-     배포처마다 채운다 (본 사이트=c1 …/labis, 개발 미러=…/labis-dev).
-     (태그 표기를 주석에 그대로 적으면 빌드의 주입 감지에 걸린다 — 적지 말 것)
-     연구실 목록은 백엔드 공개 API(/api/labs)에서 가져오고, 제출하면 백엔드의
-     /enter?lab=<id> 로 이동한다 — 로그인·권한 검증은 전부 백엔드가 한다. -->
+<!-- LABIS 정적 프론트(SPA) — contextbio.ai/labis 에 실려 주소를 유지한 채 동작한다.
+     백엔드 주소의 정본은 cb-backend 메타(빌드가 채움 — 본 사이트=c1 …/labis,
+     개발 미러=…/labis-dev). 인증은 이 오리진의 통합계정 세션에서 받은 ID 토큰을
+     Bearer 로 싣는 BioWrit 모델이다 (쿠키 없음).
+     1단계 범위: 연구실 선택 → 대시보드(요약·마일스톤·실험·과제). 아직 포팅하지
+     않은 모듈은 "기존 화면"(c1, 토큰 릴레이로 무로그인 진입)으로 연다. -->
 <style>
   :root{
     --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --bg:#f8fafc;
-    --brand:#0369a1; --brand-strong:#075985;
+    --brand:#0369a1; --brand-strong:#075985; --accent:#b45309; --card:#fff;
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:"Noto Sans KR",Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
-       background:var(--bg);color:var(--ink);min-height:100vh;display:flex;
-       align-items:center;justify-content:center;padding:24px}
-  .card{width:100%;max-width:400px;background:#fff;border:1px solid var(--line);
+       background:var(--bg);color:var(--ink);min-height:100vh}
+  a{color:var(--brand);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .center{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+  .card{width:100%;max-width:400px;background:var(--card);border:1px solid var(--line);
         border-radius:14px;padding:36px 32px;box-shadow:0 1px 3px rgba(15,23,42,.06)}
   .brand{text-align:center;margin-bottom:6px;font-size:30px;font-weight:900;
          letter-spacing:-.02em;color:var(--brand)}
   .tagline{text-align:center;font-size:12.5px;color:var(--muted);margin-bottom:26px}
   label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:0 0 6px}
-  select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;
-         background:#fff;color:var(--ink);font-size:14px;font-family:inherit}
+  select,button.primary{width:100%;font-family:inherit}
+  select{padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:#fff;
+         color:var(--ink);font-size:14px}
   select:disabled{color:var(--muted);background:var(--bg)}
-  button{width:100%;margin-top:14px;padding:11px 12px;border:0;border-radius:9px;
-         background:var(--brand);color:#fff;font-size:14.5px;font-weight:700;
-         font-family:inherit;cursor:pointer}
-  button:hover{background:var(--brand-strong)}
+  button.primary{margin-top:14px;padding:11px 12px;border:0;border-radius:9px;
+                 background:var(--brand);color:#fff;font-size:14.5px;font-weight:700;cursor:pointer}
+  button.primary:hover{background:var(--brand-strong)}
   .hint{margin-top:16px;text-align:center;font-size:11.5px;line-height:1.7;color:var(--muted)}
-  .feats{margin:0 0 22px;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px;
-         justify-content:center}
-  .feats li{font-size:11px;color:var(--muted);border:1px solid var(--line);
-            border-radius:999px;padding:3px 10px;background:var(--bg)}
+  .feats{margin:0 0 22px;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+  .feats li{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;
+            padding:3px 10px;background:var(--bg)}
+
+  /* ── 대시보드 뷰 ── */
+  #dash{display:none;max-width:1080px;margin:0 auto;padding:22px 20px 48px}
+  .dash-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:18px}
+  .dash-head .brand-sm{font-size:20px;font-weight:900;color:var(--brand);letter-spacing:-.02em}
+  .dash-head select{width:auto;font-size:13px;padding:7px 10px}
+  .dash-head .who{margin-left:auto;font-size:12.5px;color:var(--muted)}
+  .dash-head .open-full{white-space:nowrap;padding:8px 14px;border:1px solid var(--line);
+        border-radius:9px;background:#fff;color:var(--ink);font-size:12.5px;cursor:pointer;font-family:inherit}
+  .dash-head .open-full:hover{border-color:var(--brand);color:var(--brand)}
+  h2{font-size:15px;margin:26px 0 10px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  .stat{display:block;background:#fff;border:1px solid var(--line);border-radius:12px;
+        padding:14px 16px;color:inherit}
+  .stat:hover{border-color:var(--brand);text-decoration:none}
+  .stat .k{font-size:11.5px;color:var(--muted)}
+  .stat .v{font-size:22px;font-weight:800;margin-top:2px}
+  .stat.accent .v{color:var(--accent)}
+  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);
+        border-radius:12px;overflow:hidden;font-size:13px}
+  th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--line)}
+  th{font-size:11.5px;color:var(--muted);background:var(--bg);font-weight:600}
+  tr:last-child td{border-bottom:0}
+  td.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;white-space:nowrap}
+  td.dim{color:var(--muted);font-size:12px;white-space:nowrap}
+  .empty-row{color:#94a3b8;text-align:center;padding:18px 0}
+  .badge{display:inline-block;font-size:11px;padding:2px 9px;border-radius:999px;
+         background:var(--bg);border:1px solid var(--line);color:var(--muted)}
+  .grid2{display:grid;gap:18px}
+  @media(min-width:960px){.grid2{grid-template-columns:1fr 1fr}}
+  .note{margin-top:26px;font-size:11.5px;color:var(--muted);line-height:1.7}
+  #dashErr{display:none;margin:12px 0;padding:10px 14px;border-radius:9px;
+           background:#fef2f2;color:#b91c1c;font-size:13px}
 </style>
 </head>
 <body>
+
+<!-- ── 뷰 1: 연구실 선택 (입장) ── -->
+<div class="center" id="entry">
   <main class="card">
     <div class="brand">LABIS</div>
     <p class="tagline">Lab Intelligence System — 연구실·학과 운영 관리</p>
     <ul class="feats">
       <li>인사</li><li>과제</li><li>연구비</li><li>성과</li><li>구매</li><li>장비</li><li>LIMS</li>
     </ul>
-
     <form id="enterForm">
       <label for="labSelect">연구실 선택</label>
       <select id="labSelect" disabled>
         <option value="">연구실 목록을 불러오는 중…</option>
       </select>
-      <button type="submit">LABIS 입장</button>
+      <button type="submit" class="primary">LABIS 입장</button>
     </form>
-
     <p class="hint">
       contextBio 통합 계정으로 로그인합니다.<br>
       접근 권한은 관리자의 초대로 부여됩니다.
     </p>
   </main>
+</div>
+
+<!-- ── 뷰 2: 대시보드 ── -->
+<div id="dash">
+  <div class="dash-head">
+    <span class="brand-sm">LABIS</span>
+    <select id="dashLab" title="연구실 전환"></select>
+    <span class="who" id="dashWho"></span>
+    <button type="button" class="open-full" id="openFull">전체 기능(편집·상세) — 기존 화면 열기</button>
+  </div>
+  <div id="dashErr"></div>
+
+  <h2 id="dashTitle">대시보드</h2>
+  <div class="stats" id="statCards"></div>
+
+  <div class="grid2">
+    <div>
+      <h2>다가오는 마일스톤</h2>
+      <table><thead><tr><th>기한</th><th>과제</th><th>내용</th><th>상태</th></tr></thead>
+        <tbody id="msBody"></tbody></table>
+    </div>
+    <div>
+      <h2>최근 실험</h2>
+      <table><thead><tr><th>실험번호</th><th>제목</th><th>담당</th><th>상태</th></tr></thead>
+        <tbody id="exBody"></tbody></table>
+    </div>
+  </div>
+
+  <h2>진행 중 과제</h2>
+  <table><thead><tr><th>과제번호</th><th>과제명</th><th>책임자</th><th>기간</th><th>상태</th></tr></thead>
+    <tbody id="pjBody"></tbody></table>
+
+  <p class="note">
+    이 화면은 contextbio.ai 에서 직접 서빙되는 요약 보기입니다. 등록·수정·상세와 아직
+    옮기지 않은 모듈은 <b>기존 화면</b>(위 버튼)에서 계속 쓸 수 있습니다 — 모듈들은
+    순차적으로 이 화면으로 옮겨 옵니다.
+  </p>
+</div>
 
 <script>
 (function () {
   "use strict";
-  // 백엔드 주소의 정본 — 빌드가 채우는 cb-backend 메타 (공통 규약)
   var meta = document.querySelector('meta[name="cb-backend"]');
   var BACKEND = ((meta && meta.getAttribute("content")) || "https://c1.sysmed.kr/labis")
     .trim().replace(/\/+$/, "");
+  var LAB_KEY = "labis.activeLab";
 
-  var sel = document.getElementById("labSelect");
-
-  fetch(BACKEND + "/api/labs")
-    .then(function (r) { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
-    .then(function (d) {
-      var labs = (d && d.labs) || [];
-      sel.innerHTML = "";
-      var any = document.createElement("option");
-      any.value = ""; any.textContent = labs.length ? "— 연구실을 고르세요 —" : "(등록된 연구실 없음)";
-      sel.appendChild(any);
-      labs.forEach(function (l) {
-        var o = document.createElement("option");
-        o.value = String(l.id); o.textContent = l.name;
-        sel.appendChild(o);
-      });
-      sel.disabled = false;
-    })
-    .catch(function () {
-      // 목록을 못 가져와도 입장은 막지 않는다 — 랩 선택은 편의일 뿐, 권한은 백엔드가 정한다.
-      sel.innerHTML = '<option value="">목록을 불러오지 못했습니다 — 그대로 입장하세요</option>';
-      sel.disabled = false;
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
+  };
 
-  // 이 오리진의 Firebase 세션에서 ID 토큰을 미리 받아 둔다 (빌드가 통합계정
-  // 브리지 스크립트 두 개를 함께 싣는다). 이미 로그인한 사용자는 제출 시
-  // 토큰을 백엔드 로그인 화면의 #token= 자동 소비 경로에 실어 보내므로 로그인
-  // 화면이 다시 나오지 않고 곧장 입장한다. 토큰이 없으면(미로그인·브리지 실패)
-  // /enter 로 직접 가서 백엔드의 로그인 흐름을 탄다 — 기존과 동일.
-  var tokenPromise = (function () {
-    var WAIT_MS = 4000;
-    function bridge() {
-      if (window.ContextAuth) return Promise.resolve(window.ContextAuth);
-      return new Promise(function (resolve) {
-        var t0 = Date.now();
-        var t = setInterval(function () {
-          if (window.ContextAuth || Date.now() - t0 > WAIT_MS) {
-            clearInterval(t); resolve(window.ContextAuth || null);
-          }
-        }, 50);
-      });
-    }
+  /* ── 통합계정 토큰 (빌드가 싣는 브리지에서) ── */
+  var WAIT_MS = 4000;
+  function bridge() {
+    if (window.ContextAuth) return Promise.resolve(window.ContextAuth);
+    return new Promise(function (resolve) {
+      var t0 = Date.now();
+      var t = setInterval(function () {
+        if (window.ContextAuth || Date.now() - t0 > WAIT_MS) {
+          clearInterval(t); resolve(window.ContextAuth || null);
+        }
+      }, 50);
+    });
+  }
+  function idToken() {
     return bridge().then(function (api) {
       if (!api || !api.ready) return "";
       var settled = api.whenReady ? api.whenReady() : Promise.resolve();
@@ -118,22 +171,163 @@
         .then(function () { return api.getIdToken(); })
         .catch(function () { return ""; });
     });
-  })();
+  }
+  function api(path, token) {
+    return fetch(BACKEND + path, { headers: { Authorization: "Bearer " + token } })
+      .then(function (r) {
+        return r.json().then(function (d) {
+          if (!r.ok || !d.ok) throw Object.assign(new Error(d.error || r.status), { code: d.error });
+          return d;
+        });
+      });
+  }
+  /* 기존 화면(c1)으로 — 토큰을 실어 보내 로그인 화면 없이 연다 */
+  function openLegacy(token, path) {
+    location.href = BACKEND + "/login?next=" + encodeURIComponent(path) +
+      (token ? "#token=" + encodeURIComponent(token) : "");
+  }
 
-  document.getElementById("enterForm").addEventListener("submit", function (e) {
+  /* ── 뷰 1: 선택창 ── */
+  var sel = $("labSelect");
+  function fillEntrySelect(labs, savedId) {
+    sel.innerHTML = "";
+    var any = document.createElement("option");
+    any.value = ""; any.textContent = labs.length ? "— 연구실을 고르세요 —" : "(등록된 연구실 없음)";
+    sel.appendChild(any);
+    labs.forEach(function (l) {
+      var o = document.createElement("option");
+      o.value = String(l.id != null ? l.id : l.labId);
+      o.textContent = l.name != null ? l.name : l.labName;
+      if (o.value === String(savedId)) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.disabled = false;
+  }
+  fetch(BACKEND + "/api/labs")
+    .then(function (r) { if (!r.ok) throw 0; return r.json(); })
+    .then(function (d) { fillEntrySelect((d && d.labs) || [], localStorage.getItem(LAB_KEY)); })
+    .catch(function () {
+      sel.innerHTML = '<option value="">목록을 불러오지 못했습니다 — 그대로 입장하세요</option>';
+      sel.disabled = false;
+    });
+
+  var tokenPromise = idToken();
+
+  $("enterForm").addEventListener("submit", function (e) {
     e.preventDefault();
     var lab = sel.value;
-    var enterPath = "/enter" + (lab ? "?lab=" + encodeURIComponent(lab) : "");
     var btn = document.querySelector("#enterForm button");
     btn.disabled = true; btn.textContent = "입장 중…";
     tokenPromise.then(function (token) {
-      if (token) {
-        location.href = BACKEND + "/login?next=" + encodeURIComponent(enterPath) +
-          "#token=" + encodeURIComponent(token);
-      } else {
-        location.href = BACKEND + enterPath;
+      if (!token) {
+        // 미로그인 — 이 오리진의 통합 로그인으로 갔다가 이 페이지로 돌아온다
+        location.href = "/login?next=" + encodeURIComponent(location.pathname);
+        return;
       }
+      if (lab) { try { localStorage.setItem(LAB_KEY, lab); } catch (_) {} }
+      showDashboard(token).catch(function (err) {
+        // API 미지원(구판 백엔드)이나 일시 오류 — 기존 방식으로 입장
+        if (err && err.code === "not_invited") {
+          btn.disabled = false; btn.textContent = "LABIS 입장";
+          alert("이 계정은 아직 LABIS 에 초대되지 않았습니다. 관리자에게 초대를 요청하세요.");
+          return;
+        }
+        openLegacy(token, "/enter" + (lab ? "?lab=" + encodeURIComponent(lab) : ""));
+      });
     });
+  });
+
+  /* ── 뷰 2: 대시보드 ── */
+  var ME = null, TOKEN = "";
+
+  function showDashboard(token) {
+    TOKEN = token;
+    return api("/api/v1/me", token).then(function (d) {
+      ME = d;
+      var labs = d.labs || [];
+      if (!labs.length) throw Object.assign(new Error("no_lab"), { code: "not_invited" });
+      var saved = localStorage.getItem(LAB_KEY);
+      var lab = labs.some(function (l) { return String(l.labId) === String(saved); })
+        ? Number(saved) : labs[0].labId;
+
+      var dl = $("dashLab");
+      dl.innerHTML = "";
+      labs.forEach(function (l) {
+        var o = document.createElement("option");
+        o.value = String(l.labId); o.textContent = l.labName;
+        if (l.labId === lab) o.selected = true;
+        dl.appendChild(o);
+      });
+      $("dashWho").textContent = d.user.name + " · " + d.user.email;
+      $("entry").style.display = "none";
+      $("dash").style.display = "block";
+      return loadSummary(lab);
+    });
+  }
+
+  function loadSummary(lab) {
+    try { localStorage.setItem(LAB_KEY, String(lab)); } catch (_) {}
+    $("dashErr").style.display = "none";
+    return api("/api/v1/summary?lab=" + lab, TOKEN).then(function (d) {
+      var labName = (ME.labs.find(function (l) { return l.labId === Number(lab); }) || {}).labName || "";
+      $("dashTitle").textContent = "대시보드 — " + labName;
+
+      var s = d.stats;
+      var cards = [
+        ["진행 중 과제", s.activeProjects + "건", "/projects", false],
+        ["보유 시료", s.samples + "건", "/lims/samples", false],
+        ["진행 중 실험", s.runningExperiments + "건", "/lims/experiments", false],
+        ["재직 인원", s.members + "명", "/hr", false],
+        ["올해 논문", s.pubsThisYear + "편", "/outcomes", false],
+        ["구매 진행 중", s.pendingPurchases + "건", "/purchases", s.pendingPurchases > 0],
+        ["휴가 승인 대기", s.pendingLeaves + "건", "/hr", s.pendingLeaves > 0],
+        ["점검 필요 장비", s.instrumentsNeedCheck + "대", "/lims/instruments", s.instrumentsNeedCheck > 0],
+      ];
+      $("statCards").innerHTML = cards.map(function (c) {
+        return '<a class="stat' + (c[3] ? " accent" : "") + '" href="#" data-path="' + esc(c[2]) + '">' +
+          '<div class="k">' + esc(c[0]) + '</div><div class="v">' + esc(c[1]) + "</div></a>";
+      }).join("");
+
+      $("msBody").innerHTML = (d.milestones.length ? d.milestones.map(function (m) {
+        return "<tr><td class=mono>" + esc(m.dueDate) + "</td><td class=dim>" + esc(m.projectCode) +
+          "</td><td>" + esc(m.title) + "</td><td><span class=badge>" + esc(m.status) + "</span></td></tr>";
+      }) : ['<tr><td colspan="4" class="empty-row">예정된 마일스톤이 없습니다</td></tr>']).join("");
+
+      $("exBody").innerHTML = (d.experiments.length ? d.experiments.map(function (x) {
+        return "<tr><td class=mono>" + esc(x.code) + "</td><td>" + esc(x.title) + "</td><td class=dim>" +
+          esc(x.assignee || "-") + "</td><td><span class=badge>" + esc(x.status) + "</span></td></tr>";
+      }) : ['<tr><td colspan="4" class="empty-row">등록된 실험이 없습니다</td></tr>']).join("");
+
+      $("pjBody").innerHTML = (d.projects.length ? d.projects.map(function (p) {
+        return "<tr><td class=mono>" + esc(p.code) + "</td><td>" + esc(p.title) + "</td><td class=dim>" +
+          esc(p.piName || "-") + "</td><td class=dim>" + esc(p.startDate) + " ~ " + esc(p.endDate) +
+          "</td><td><span class=badge>" + esc(p.status) + "</span></td></tr>";
+      }) : ['<tr><td colspan="5" class="empty-row">진행 중인 과제가 없습니다</td></tr>']).join("");
+    }).catch(function (e) {
+      var el = $("dashErr");
+      el.textContent = "요약을 불러오지 못했습니다 (" + (e.code || e.message) + "). 잠시 후 다시 시도하세요.";
+      el.style.display = "block";
+    });
+  }
+
+  $("dashLab").addEventListener("change", function () { loadSummary(Number(this.value)); });
+  $("openFull").addEventListener("click", function () {
+    var lab = $("dashLab").value;
+    openLegacy(TOKEN, "/enter" + (lab ? "?lab=" + encodeURIComponent(lab) : ""));
+  });
+  $("statCards").addEventListener("click", function (e) {
+    var a = e.target.closest ? e.target.closest("a.stat") : null;
+    if (!a) return;
+    e.preventDefault();
+    openLegacy(TOKEN, a.getAttribute("data-path") || "/");
+  });
+
+  // 로그인에서 돌아왔거나 이미 로그인된 채 재방문한 경우: 저장된 랩이 있으면
+  // 선택창을 거치지 않고 곧장 대시보드로.
+  tokenPromise.then(function (token) {
+    if (!token) return;
+    var saved = localStorage.getItem(LAB_KEY);
+    if (saved) { showDashboard(token).catch(function () { /* 선택창 유지 */ }); }
   });
 })();
 </script>
