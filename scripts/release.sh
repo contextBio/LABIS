@@ -17,11 +17,12 @@ DRY=${1:-}
 
 [ "$(git -C "$DEV_WT" rev-parse --abbrev-ref HEAD)" = "dev" ] \
   || { echo "오류: dev 워크트리가 dev 브랜치가 아닙니다." >&2; exit 1; }
-[ -z "$(git -C "$DEV_WT" status --porcelain)" ] \
+# .claude/ 는 세션 도구가 수시로 고쳐 쓰는 로컬 설정이라 릴리즈 판정에서 뺀다
+[ -z "$(git -C "$DEV_WT" status --porcelain -- ':(exclude).claude')" ] \
   || { echo "오류: dev 워크트리에 커밋되지 않은 변경이 있습니다." >&2; exit 1; }
 [ "$(git -C "$PROD_WT" rev-parse --abbrev-ref HEAD)" = "main" ] \
   || { echo "오류: 운영 워크트리가 main 브랜치가 아닙니다." >&2; exit 1; }
-[ -z "$(git -C "$PROD_WT" status --porcelain --untracked-files=no)" ] \
+[ -z "$(git -C "$PROD_WT" status --porcelain --untracked-files=no -- ':(exclude).claude')" ] \
   || { echo "오류: 운영 워크트리에 커밋되지 않은 변경이 있습니다." >&2; exit 1; }
 
 echo "==> 나갈 커밋:"
