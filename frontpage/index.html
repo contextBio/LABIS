@@ -6,9 +6,9 @@
 <title>LABIS — Lab Intelligence System</title>
 <!-- LABIS 정적 프론트(SPA) — contextbio.ai/labis 에 실려 주소를 유지한 채 동작한다.
      백엔드 주소의 정본은 cb-backend 메타(빌드가 채움), 인증은 통합계정 ID 토큰
-     Bearer(BioWrit 모델, 쿠키 없음), 데이터는 /api/v1/*.
-     조회 전 모듈 + 구성원 배정(운영자/팀원)이 여기서 돌고, 등록·수정과 시트연동·
-     학과관리는 "기존 화면"(c1 SSR, 토큰 릴레이 무로그인)으로 연다. -->
+     Bearer(BioWrit 모델, 쿠키 없음). 조회는 /api/v1/list·project·summary,
+     등록·수정·삭제는 /api/v1/write (로그인 + 랩 소속 + op 별 역할 검증).
+     시트연동·학과관리만 "기존 화면"(c1 SSR, 토큰 릴레이 무로그인)으로 연다. -->
 <style>
   :root{
     --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --bg:#f8fafc;
@@ -27,7 +27,7 @@
          letter-spacing:-.02em;color:var(--brand)}
   .tagline{text-align:center;font-size:12.5px;color:var(--muted);margin-bottom:26px}
   label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:0 0 6px}
-  select,input[type=email],input[type=text]{padding:9px 12px;border:1px solid var(--line);
+  select,input,textarea{padding:9px 12px;border:1px solid var(--line);
         border-radius:9px;background:#fff;color:var(--ink);font-size:13.5px;font-family:inherit}
   select:disabled{color:var(--muted);background:var(--bg)}
   #entry select{width:100%}
@@ -52,6 +52,7 @@
   .btn.solid{background:var(--brand);border-color:var(--brand);color:#fff}
   .btn.solid:hover{background:var(--brand-strong)}
   .btn.danger:hover{border-color:var(--bad);color:var(--bad)}
+  .btn.sm{padding:4px 9px;font-size:11.5px}
   .shell{display:flex;min-height:calc(100vh - 57px)}
   nav.side{width:186px;flex:0 0 auto;border-right:1px solid var(--line);background:#fff;padding:12px 0}
   nav.side a{display:block;padding:8px 18px;color:var(--ink);font-size:13.5px}
@@ -59,10 +60,12 @@
   nav.side a.on{color:var(--brand);font-weight:700;background:#eff6ff}
   nav.side .sep{margin:10px 18px;border-top:1px solid var(--line)}
   nav.side .cap{padding:4px 18px;font-size:10.5px;color:#94a3b8;letter-spacing:.08em}
-  main#view{flex:1;min-width:0;padding:20px 22px 60px;max-width:1120px}
+  main#view{flex:1;min-width:0;padding:20px 22px 60px;max-width:1140px}
   h1.pg{font-size:18px;margin:2px 0 4px}
-  p.desc{margin:0 0 16px;font-size:12.5px;color:var(--muted)}
+  p.desc{margin:0 0 12px;font-size:12.5px;color:var(--muted)}
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
   h2{font-size:14.5px;margin:24px 0 8px}
+  h2 .btn{margin-left:8px;vertical-align:middle}
   .stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
   .stat{display:block;background:#fff;border:1px solid var(--line);border-radius:12px;
         padding:13px 15px;color:inherit}
@@ -78,6 +81,8 @@
   td.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;white-space:nowrap}
   td.dim{color:var(--muted);font-size:12px;white-space:nowrap}
   td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  td.act{white-space:nowrap}
+  td.act select{padding:4px 6px;font-size:11.5px}
   .empty-row{color:#94a3b8;text-align:center;padding:18px 0}
   .badge{display:inline-block;font-size:11px;padding:2px 9px;border-radius:999px;
          background:var(--bg);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
@@ -93,11 +98,22 @@
   form.assign{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 4px}
   form.assign input{width:240px}
   .flash{margin:8px 0;padding:8px 12px;border-radius:8px;background:#ecfdf5;color:var(--ok);font-size:12.5px}
+
+  /* ── 모달 폼 ── */
+  #modalWrap{position:fixed;inset:0;z-index:50;display:none;align-items:flex-start;
+             justify-content:center;background:rgba(15,23,42,.45);overflow:auto;padding:40px 16px}
+  #modal{background:#fff;border-radius:14px;max-width:480px;width:100%;padding:24px 26px;
+         box-shadow:0 10px 40px rgba(15,23,42,.25)}
+  #modal h3{margin:0 0 16px;font-size:15.5px}
+  #modal .fld{margin-bottom:12px}
+  #modal .fld input,#modal .fld select,#modal .fld textarea{width:100%}
+  #modal .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  #modal .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
 </style>
 </head>
 <body>
 
-<!-- ── 뷰 1: 입장 (연구실 선택) ── -->
+<!-- ── 뷰 1: 입장 ── -->
 <div class="center" id="entry">
   <main class="card">
     <div class="brand">LABIS</div>
@@ -125,13 +141,16 @@
     <span class="brand-sm">LABIS</span>
     <select id="dashLab" title="연구실 전환"></select>
     <span class="who" id="dashWho"></span>
-    <button type="button" class="btn" id="openFull">기존 화면(등록·수정) 열기</button>
+    <button type="button" class="btn" id="openFull">기존 화면 열기</button>
   </div>
   <div class="shell">
     <nav class="side" id="sideNav"></nav>
     <main id="view"></main>
   </div>
 </div>
+
+<!-- ── 모달 폼 ── -->
+<div id="modalWrap"><div id="modal"></div></div>
 
 <script>
 (function () {
@@ -150,15 +169,29 @@
   function won(n) { return (Number(n) || 0).toLocaleString("ko-KR") + "원"; }
   function pct(spent, total) { return total > 0 ? Math.round((spent / total) * 100) + "%" : "-"; }
   var ROLE_KO = { PI: "연구책임자", LAB_MANAGER: "랩매니저", MEMBER: "연구원", DEPT_ADMIN: "학과관리자" };
+  var RANKS = { MEMBER: 1, LAB_MANAGER: 2, PI: 3, DEPT_ADMIN: 4 };
   function roleBadge(role) {
     var op = role === "PI" || role === "LAB_MANAGER" || role === "DEPT_ADMIN";
     return '<span class="badge' + (op ? " op" : "") + '">' +
       (op ? "운영자 · " : "팀원 · ") + esc(ROLE_KO[role] || role) + "</span>";
   }
 
+  /* ── 상태값 (기존 화면과 동일) ── */
+  var ST = {
+    project: ["계획", "진행", "종료", "중단"],
+    milestone: ["예정", "진행", "완료", "지연"],
+    leave: ["신청", "승인", "반려"],
+    purchase: ["신청", "발주", "입고", "취소"],
+    sample: ["보관", "사용중", "소진", "폐기"],
+    experiment: ["계획", "진행", "완료", "보류"],
+    instrument: ["정상", "점검중", "고장", "폐기"],
+    patent: ["출원", "등록", "거절", "포기"],
+    work: ["재직", "휴직", "퇴직"],
+  };
+
   /* ── 통합계정 토큰 ── */
   var WAIT_MS = 4000;
-  function bridge() {
+  function bridgeWait() {
     if (window.ContextAuth) return Promise.resolve(window.ContextAuth);
     return new Promise(function (resolve) {
       var t0 = Date.now();
@@ -170,7 +203,7 @@
     });
   }
   function idToken() {
-    return bridge().then(function (api) {
+    return bridgeWait().then(function (api) {
       if (!api || !api.ready) return "";
       var settled = api.whenReady ? api.whenReady() : Promise.resolve();
       var timeout = new Promise(function (r) { setTimeout(r, WAIT_MS); });
@@ -180,6 +213,11 @@
     });
   }
   var TOKEN = "", ME = null, LAB = 0, CACHE = {};
+  function rank() {
+    if (!ME) return 0;
+    var l = (ME.labs || []).find(function (x) { return x.labId === LAB; });
+    return l ? (RANKS[l.role] || 0) : 0;
+  }
   function req(path, opts) {
     opts = opts || {};
     opts.headers = Object.assign({ Authorization: "Bearer " + TOKEN }, opts.headers || {});
@@ -197,9 +235,105 @@
       CACHE[key] = d.rows; return d.rows;
     });
   }
+  function invalidate(kinds) {
+    (kinds || []).forEach(function (k) { delete CACHE[LAB + ":" + k]; });
+  }
+  /** 등록·수정·삭제 — 성공하면 관련 캐시를 비우고 현재 화면을 다시 그린다 */
+  function write(op, data, kinds) {
+    return req("/api/v1/write?lab=" + LAB, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ op: op, data: data || {} }),
+    }).then(function (d) { invalidate(kinds); return d; });
+  }
   function openLegacy(path) {
     location.href = BACKEND + "/login?next=" + encodeURIComponent(path) +
       (TOKEN ? "#token=" + encodeURIComponent(TOKEN) : "");
+  }
+
+  /* ── 선택지 소스 ── */
+  function userOpts(label) {
+    return list("members").then(function (rs) {
+      return [{ v: "", t: label || "— 선택 안 함 —" }].concat(rs.map(function (r) {
+        return { v: r.userId, t: r.name + (r.position ? " (" + r.position + ")" : "") };
+      }));
+    });
+  }
+  function projectOpts() {
+    return list("projects").then(function (rs) {
+      return [{ v: "", t: "— 과제 미지정 —" }].concat(rs.map(function (r) {
+        return { v: String(r.id), t: r.code + " · " + r.title.slice(0, 24) };
+      }));
+    });
+  }
+  function sampleOpts() {
+    return list("samples").then(function (rs) {
+      return [{ v: "", t: "— 시료 미지정 —" }].concat(rs.map(function (r) {
+        return { v: String(r.id), t: r.code + " · " + r.name };
+      }));
+    });
+  }
+
+  /* ── 모달 폼 ──
+     fields: [{k,label,type:text|number|date|textarea|select,opts,req,def,half}] */
+  function openForm(title, fields, onSubmit) {
+    var withOpts = fields.map(function (f) {
+      if (typeof f.opts === "function") {
+        return f.opts().then(function (o) { return Object.assign({}, f, { opts: o }); });
+      }
+      return Promise.resolve(f);
+    });
+    Promise.all(withOpts).then(function (fs) {
+      var m = $("modal");
+      m.innerHTML = "<h3>" + esc(title) + "</h3><form id=modalForm>" +
+        fs.map(function (f, i) {
+          var inner;
+          if (f.type === "select") {
+            inner = '<select data-i="' + i + '">' + (f.opts || []).map(function (o) {
+              var v = o.v !== undefined ? o.v : o, t = o.t !== undefined ? o.t : o;
+              return '<option value="' + esc(v) + '"' + (String(f.def) === String(v) ? " selected" : "") + ">" + esc(t) + "</option>";
+            }).join("") + "</select>";
+          } else if (f.type === "textarea") {
+            inner = '<textarea data-i="' + i + '" rows="2">' + esc(f.def || "") + "</textarea>";
+          } else {
+            inner = '<input data-i="' + i + '" type="' + (f.type || "text") + '" value="' + esc(f.def || "") + '"' +
+              (f.req ? " required" : "") + ">";
+          }
+          return '<div class="fld"><label>' + esc(f.label) + (f.req ? " *" : "") + "</label>" + inner + "</div>";
+        }).join("") +
+        '<div class="btns"><button type="button" class="btn" id="mCancel">취소</button>' +
+        '<button type="submit" class="btn solid">저장</button></div></form>';
+      $("modalWrap").style.display = "flex";
+      $("mCancel").onclick = closeForm;
+      $("modalForm").onsubmit = function (e) {
+        e.preventDefault();
+        var data = {};
+        fs.forEach(function (f, i) {
+          var el = m.querySelector('[data-i="' + i + '"]');
+          data[f.k] = el ? el.value : "";
+        });
+        var btn = m.querySelector("button[type=submit]");
+        btn.disabled = true; btn.textContent = "저장 중…";
+        onSubmit(data).then(function () { closeForm(); route(); })
+          .catch(function (err) {
+            btn.disabled = false; btn.textContent = "저장";
+            alert("실패: " + (err.code || err.message));
+          });
+      };
+    });
+  }
+  function closeForm() { $("modalWrap").style.display = "none"; $("modal").innerHTML = ""; }
+  $("modalWrap").addEventListener("click", function (e) { if (e.target === this) closeForm(); });
+
+  /* ── 행 단위 조작 셀 ── */
+  function statusSel(op, id, cur, opts, kinds) {
+    return '<select data-sop="' + op + '" data-id="' + id + '" data-kinds="' + kinds.join(",") + '">' +
+      opts.map(function (o) { return '<option' + (o === cur ? " selected" : "") + ">" + esc(o) + "</option>"; }).join("") +
+      "</select>";
+  }
+  function delBtn(op, id, kinds) {
+    return '<button class="btn sm danger" data-del="' + op + '" data-id="' + id +
+      '" data-kinds="' + kinds.join(",") + '">삭제</button>';
   }
 
   /* ── 범용 표 ── */
@@ -221,18 +355,20 @@
   }
   var B = function (r, k) { return '<span class="badge">' + esc(r[k] || "-") + "</span>"; };
 
-  /* ── 화면들 ── */
-  function head(title, desc) {
-    return '<h1 class="pg">' + esc(title) + '</h1><p class="desc">' + esc(desc || "") + '</p><div id="err"></div>';
+  function head(title, desc, toolbar) {
+    return '<h1 class="pg">' + esc(title) + '</h1><p class="desc">' + esc(desc || "") + "</p>" +
+      '<div id="err"></div>' + (toolbar ? '<div class="toolbar">' + toolbar + "</div>" : "");
   }
   function showErr(e) {
     var el = $("err"); if (!el) return;
     el.textContent = "불러오지 못했습니다 (" + (e.code || e.message) + ")";
     el.style.display = "block";
   }
+  function addBtn(id, label) { return '<button class="btn solid" id="' + id + '">+ ' + esc(label) + "</button>"; }
 
   var VIEWS = {};
 
+  /* ── 대시보드 ── */
   VIEWS.dash = function (v) {
     v.innerHTML = head("대시보드 — " + labName(), "연구실 운영 현황 한눈에 보기") +
       '<div class="stats" id="statCards"></div>' +
@@ -272,8 +408,28 @@
     }).catch(showErr);
   };
 
+  /* ── 과제 ── */
   VIEWS.projects = function (v) {
-    v.innerHTML = head("과제관리", "과제·참여연구원·마일스톤·예산 집행") + '<div id="t"></div>';
+    v.innerHTML = head("과제관리", "과제·참여연구원·마일스톤·예산 집행",
+      rank() >= 2 ? addBtn("addProject", "과제 등록") : "") + '<div id="t"></div>';
+    if ($("addProject")) $("addProject").onclick = function () {
+      openForm("과제 등록", [
+        { k: "code", label: "과제번호", req: true },
+        { k: "title", label: "과제명", req: true },
+        { k: "sponsor", label: "발주처" },
+        { k: "program", label: "사업명" },
+        { k: "pi_id", label: "연구책임자", type: "select", opts: function () { return userOpts("— 연구책임자 선택 —"); } },
+        { k: "start_date", label: "시작일", type: "date" },
+        { k: "end_date", label: "종료일", type: "date" },
+        { k: "total_budget", label: "총 연구비 (원)", type: "number" },
+        { k: "status", label: "상태", type: "select", opts: ST.project, def: "진행" },
+        { k: "memo", label: "메모", type: "textarea" },
+      ], function (d) {
+        return write("project_create", d, ["projects", "finance"]).then(function (r) {
+          if (r.id) location.hash = "#/projects/" + r.id;
+        });
+      });
+    };
     list("projects").then(function (rows) {
       $("t").innerHTML = table([
         { h: "과제번호", cls: "mono", f: function (r) { return '<a href="#/projects/' + r.id + '">' + esc(r.code) + "</a>"; } },
@@ -290,9 +446,11 @@
   VIEWS.projectDetail = function (v, id) {
     v.innerHTML = head("과제 상세", "") + '<div id="t">불러오는 중…</div>';
     req("/api/v1/project?lab=" + LAB + "&id=" + id).then(function (d) {
-      var p = d.project;
+      var p = d.project, r2 = rank() >= 2, PK = ["projects", "finance"];
       v.querySelector("h1.pg").textContent = p.code + " — " + p.title;
       $("t").innerHTML =
+        (r2 ? '<div class="toolbar">상태: ' + statusSel("project_status", p.id, p.status, ST.project, PK) +
+          (rank() >= 3 ? " " + delBtn("project_delete", p.id, PK).replace(">삭제<", ">과제 삭제<") : "") + "</div>" : "") +
         '<div class="kv">' +
         '<span class="k">발주처</span><span>' + esc(p.sponsor || "-") + "</span>" +
         '<span class="k">사업명</span><span>' + esc(p.program || "-") + "</span>" +
@@ -303,25 +461,69 @@
         '<span class="k">상태</span><span>' + B(p, "status") + "</span>" +
         (p.memo ? '<span class="k">메모</span><span>' + esc(p.memo) + "</span>" : "") +
         "</div>" +
-        "<h2>참여연구원</h2>" + table([
+        "<h2>참여연구원" + (r2 ? '<button class="btn sm" id="addPm">+ 추가</button>' : "") + "</h2>" +
+        table([
           { h: "이름", k: "name" }, { h: "직급", k: "position", cls: "dim" },
-          { h: "역할", f: function (r) { return roleBadge(r.role); } },
+          { h: "역할", k: "role", cls: "dim" },
           { h: "참여율", cls: "num", f: function (r) { return esc((r.effortPct || 0) + "%"); } },
-        ], p.members) +
-        "<h2>마일스톤</h2>" + table([
+        ].concat(r2 ? [{ h: "", cls: "act", f: function (r) { return delBtn("project_member_remove", r.id, []).replace(">삭제<", ">제외<"); } }] : []), p.members) +
+        "<h2>마일스톤" + (r2 ? '<button class="btn sm" id="addMs">+ 추가</button>' : "") + "</h2>" +
+        table([
           { h: "기한", k: "dueDate", cls: "mono" }, { h: "내용", k: "title" },
-          { h: "상태", f: function (r) { return B(r, "status"); } },
-        ], p.milestones) +
-        "<h2>예산 집행</h2>" + table([
+          { h: "상태", cls: "act", f: function (r) {
+            return r2 ? statusSel("milestone_status", r.id, r.status, ST.milestone, []) : B(r, "status");
+          } },
+        ].concat(r2 ? [{ h: "", cls: "act", f: function (r) { return delBtn("milestone_delete", r.id, []); } }] : []), p.milestones) +
+        "<h2>예산 집행" + (r2 ? '<button class="btn sm" id="addBg">+ 추가</button>' : "") + "</h2>" +
+        table([
           { h: "일자", k: "spentDate", cls: "mono" }, { h: "비목", k: "category", cls: "dim" },
           { h: "내용", k: "item" }, { h: "금액", cls: "num", f: function (r) { return esc(won(r.amount)); } },
-        ], p.budgetItems) +
+        ].concat(r2 ? [{ h: "", cls: "act", f: function (r) { return delBtn("budget_delete", r.id, ["finance", "projects"]); } }] : []), p.budgetItems) +
         '<p class="note"><a href="#/projects">← 과제 목록으로</a></p>';
+
+      if ($("addPm")) $("addPm").onclick = function () {
+        openForm("참여연구원 추가", [
+          { k: "user_id", label: "구성원", type: "select", req: true, opts: function () { return userOpts("— 구성원 선택 —"); } },
+          { k: "role", label: "역할", type: "select", opts: ["참여연구원", "연구책임자", "연구보조원"] },
+          { k: "effort_pct", label: "참여율 (%)", type: "number" },
+        ], function (d2) { d2.project_id = p.id; return write("project_member_add", d2, ["members"]); });
+      };
+      if ($("addMs")) $("addMs").onclick = function () {
+        openForm("마일스톤 추가", [
+          { k: "title", label: "내용", req: true },
+          { k: "due_date", label: "기한", type: "date", req: true },
+          { k: "status", label: "상태", type: "select", opts: ST.milestone, def: "예정" },
+          { k: "memo", label: "메모", type: "textarea" },
+        ], function (d2) { d2.project_id = p.id; return write("milestone_add", d2, []); });
+      };
+      if ($("addBg")) $("addBg").onclick = function () {
+        openForm("예산 집행 추가", [
+          { k: "spent_date", label: "일자", type: "date" },
+          { k: "category", label: "비목", type: "select", opts: ["인건비", "재료비", "장비비", "여비", "기타"] },
+          { k: "item", label: "내용", req: true },
+          { k: "amount", label: "금액 (원)", type: "number", req: true },
+          { k: "memo", label: "메모", type: "textarea" },
+        ], function (d2) { d2.project_id = p.id; return write("budget_add", d2, ["finance", "projects"]); });
+      };
     }).catch(showErr);
   };
 
+  /* ── 인사 ── */
   VIEWS.hr = function (v) {
-    v.innerHTML = head("인사관리", "명부 · 참여율 · 휴가") + "<h2>명부</h2><div id=t1></div><h2>휴가</h2><div id=t2></div>";
+    var r2 = rank() >= 2, HK = ["members", "leaves"];
+    v.innerHTML = head("인사관리", "명부 · 참여율 · 휴가", addBtn("addLeave", "휴가 신청")) +
+      "<h2>명부</h2><div id=t1></div><h2>휴가</h2><div id=t2></div>";
+    $("addLeave").onclick = function () {
+      var fields = [];
+      if (r2) fields.push({ k: "user_id", label: "대상자 (비우면 본인)", type: "select", opts: function () { return userOpts("— 본인 —"); } });
+      fields.push(
+        { k: "type", label: "구분", type: "select", opts: ["연차", "병가", "공가", "기타"] },
+        { k: "start_date", label: "시작일", type: "date", req: true },
+        { k: "end_date", label: "종료일", type: "date" },
+        { k: "days", label: "일수", type: "number", def: "1" },
+        { k: "reason", label: "사유", type: "textarea" });
+      openForm("휴가 신청", fields, function (d) { return write("leave_create", d, HK); });
+    };
     list("members").then(function (rows) {
       $("t1").innerHTML = table([
         { h: "이름", k: "name" }, { h: "직급", k: "position", cls: "dim" },
@@ -329,20 +531,47 @@
         { h: "이메일", k: "email", cls: "dim" }, { h: "입사일", k: "hireDate", cls: "mono" },
         { h: "참여율 합계", cls: "num", f: function (r) { return esc((r.totalEffort || 0) + "%"); } },
         { h: "상태", f: function (r) { return B(r, "workStatus"); } },
-      ], rows);
+      ].concat(r2 ? [{ h: "", cls: "act", f: function (r) {
+        return '<button class="btn sm" data-profile="' + esc(r.userId) + '">프로필 수정</button>';
+      } }] : []), rows);
+      if (r2) $("t1").addEventListener("click", function (e) {
+        var b = e.target.closest ? e.target.closest("button[data-profile]") : null;
+        if (!b) return;
+        var u = rows.find(function (x) { return x.userId === b.getAttribute("data-profile"); });
+        openForm("프로필 수정 — " + u.name, [
+          { k: "position", label: "직급", def: u.position },
+          { k: "phone", label: "연락처", def: u.phone },
+          { k: "hire_date", label: "입사일", type: "date", def: u.hireDate },
+          { k: "work_status", label: "상태", type: "select", opts: ST.work, def: u.workStatus },
+        ], function (d) { d.user_id = u.userId; return write("profile_update", d, HK); });
+      });
     }).catch(showErr);
     list("leaves").then(function (rows) {
       $("t2").innerHTML = table([
         { h: "이름", k: "user" }, { h: "구분", k: "type", cls: "dim" },
         { h: "기간", cls: "dim", f: function (r) { return esc(r.startDate) + " ~ " + esc(r.endDate); } },
-        { h: "일수", k: "days", cls: "num" }, { h: "상태", f: function (r) { return B(r, "status"); } },
+        { h: "일수", k: "days", cls: "num" },
+        { h: "상태", cls: "act", f: function (r) {
+          return r2 ? statusSel("leave_status", r.id, r.status, ST.leave, HK) : B(r, "status");
+        } },
       ], rows, "휴가 기록이 없습니다");
     }).catch(showErr);
   };
 
+  /* ── 연구비 ── */
   VIEWS.finance = function (v) {
-    v.innerHTML = head("연구비", "과제별 수지 분석 — 수입(입금) vs 지출(집행+구매)") +
+    var r2 = rank() >= 2, FK = ["fundincomes", "finance"];
+    v.innerHTML = head("연구비", "과제별 수지 분석 — 수입(입금) vs 지출(집행+구매)",
+      r2 ? addBtn("addIncome", "입금 등록") : "") +
       "<div id=t1></div><h2>입금 내역</h2><div id=t2></div>";
+    if ($("addIncome")) $("addIncome").onclick = function () {
+      openForm("입금 등록", [
+        { k: "date", label: "일자", type: "date" },
+        { k: "amount", label: "금액 (원)", type: "number", req: true },
+        { k: "project_id", label: "과제", type: "select", opts: projectOpts },
+        { k: "note", label: "내용" },
+      ], function (d) { return write("fundincome_create", d, FK); });
+    };
     list("finance").then(function (d) {
       $("t1").innerHTML = table([
         { h: "과제", cls: "mono", f: function (r) { return '<a href="#/projects/' + r.id + '">' + esc(r.code) + "</a>"; } },
@@ -361,28 +590,65 @@
       $("t2").innerHTML = table([
         { h: "일자", k: "date", cls: "mono" }, { h: "과제", k: "projectCode", cls: "dim" },
         { h: "내용", k: "note" }, { h: "금액", cls: "num", f: function (r) { return esc(won(r.amount)); } },
-      ], rows, "입금 기록이 없습니다");
+      ].concat(r2 ? [{ h: "", cls: "act", f: function (r) { return delBtn("fundincome_delete", r.id, FK); } }] : []),
+        rows, "입금 기록이 없습니다");
     }).catch(showErr);
   };
 
+  /* ── 성과 ── */
   VIEWS.outcomes = function (v) {
-    v.innerHTML = head("성과", "논문 · 특허 · 기술이전") +
+    var r2 = rank() >= 2;
+    v.innerHTML = head("성과", "논문 · 특허 · 기술이전",
+      addBtn("addPub", "논문") + addBtn("addPat", "특허") + (r2 ? addBtn("addTt", "기술이전") : "")) +
       "<h2>논문</h2><div id=t1></div><h2>특허</h2><div id=t2></div><h2>기술이전</h2><div id=t3></div>";
+    $("addPub").onclick = function () {
+      openForm("논문 등록", [
+        { k: "year", label: "연도", def: String(new Date().getFullYear()) },
+        { k: "title", label: "제목", req: true },
+        { k: "journal", label: "저널" },
+        { k: "authors", label: "저자" },
+        { k: "doi", label: "DOI" },
+        { k: "project_id", label: "연계 과제", type: "select", opts: projectOpts },
+      ], function (d) { return write("publication_create", d, ["publications"]); });
+    };
+    $("addPat").onclick = function () {
+      openForm("특허 등록", [
+        { k: "date", label: "일자", type: "date" },
+        { k: "title", label: "발명 명칭", req: true },
+        { k: "application_no", label: "출원번호" },
+        { k: "registration_no", label: "등록번호" },
+        { k: "status", label: "상태", type: "select", opts: ST.patent, def: "출원" },
+        { k: "inventors", label: "발명자" },
+        { k: "project_id", label: "연계 과제", type: "select", opts: projectOpts },
+      ], function (d) { return write("patent_create", d, ["patents"]); });
+    };
+    if ($("addTt")) $("addTt").onclick = function () {
+      openForm("기술이전 등록", [
+        { k: "contract_date", label: "계약일", type: "date" },
+        { k: "title", label: "기술명", req: true },
+        { k: "licensee", label: "이전 대상" },
+        { k: "amount", label: "기술료 (원)", type: "number" },
+        { k: "project_id", label: "연계 과제", type: "select", opts: projectOpts },
+      ], function (d) { return write("techtransfer_create", d, ["techtransfers"]); });
+    };
     list("publications").then(function (rows) {
       $("t1").innerHTML = table([
         { h: "연도", k: "year", cls: "mono" }, { h: "제목", k: "title" },
         { h: "저널", k: "journal", cls: "dim" }, { h: "저자", k: "authors", cls: "dim" },
         { h: "DOI", f: function (r) { return r.doi ? '<a href="https://doi.org/' + esc(r.doi) + '" target="_blank" rel="noreferrer">' + esc(r.doi) + "</a>" : "-"; } },
         { h: "과제", k: "projectCode", cls: "dim" },
-      ], rows, "등록된 논문이 없습니다");
+      ].concat(r2 ? [{ h: "", cls: "act", f: function (r) { return delBtn("publication_delete", r.id, ["publications"]); } }] : []),
+        rows, "등록된 논문이 없습니다");
     }).catch(showErr);
     list("patents").then(function (rows) {
       $("t2").innerHTML = table([
         { h: "일자", k: "date", cls: "mono" }, { h: "발명 명칭", k: "title" },
         { h: "출원번호", k: "applicationNo", cls: "mono" }, { h: "등록번호", k: "registrationNo", cls: "mono" },
-        { h: "발명자", k: "inventors", cls: "dim" }, { h: "상태", f: function (r) { return B(r, "status"); } },
+        { h: "발명자", k: "inventors", cls: "dim" },
+        { h: "상태", cls: "act", f: function (r) { return statusSel("patent_status", r.id, r.status, ST.patent, ["patents"]); } },
         { h: "과제", k: "projectCode", cls: "dim" },
-      ], rows, "등록된 특허가 없습니다");
+      ].concat(r2 ? [{ h: "", cls: "act", f: function (r) { return delBtn("patent_delete", r.id, ["patents"]); } }] : []),
+        rows, "등록된 특허가 없습니다");
     }).catch(showErr);
     list("techtransfers").then(function (rows) {
       $("t3").innerHTML = table([
@@ -390,62 +656,129 @@
         { h: "이전 대상", k: "licensee", cls: "dim" },
         { h: "기술료", cls: "num", f: function (r) { return esc(won(r.amount)); } },
         { h: "과제", k: "projectCode", cls: "dim" },
-      ], rows, "기술이전 기록이 없습니다");
+      ].concat(r2 ? [{ h: "", cls: "act", f: function (r) { return delBtn("techtransfer_delete", r.id, ["techtransfers"]); } }] : []),
+        rows, "기술이전 기록이 없습니다");
     }).catch(showErr);
   };
 
+  /* ── 구매 ── */
   VIEWS.purchases = function (v) {
-    v.innerHTML = head("구매", "구매 신청·발주·입고") + "<div id=t></div>";
+    var r2 = rank() >= 2, K = ["purchases", "finance"];
+    v.innerHTML = head("구매", "구매 신청·발주·입고", addBtn("addPr", "구매 신청")) + "<div id=t></div>";
+    $("addPr").onclick = function () {
+      openForm("구매 신청", [
+        { k: "order_date", label: "일자", type: "date" },
+        { k: "item", label: "품목", req: true },
+        { k: "vendor", label: "구입처" },
+        { k: "category", label: "비목", type: "select", opts: ["재료비", "시약", "소모품", "비품", "장비", "기타"] },
+        { k: "amount", label: "금액 (원)", type: "number", req: true },
+        { k: "project_id", label: "과제", type: "select", opts: projectOpts },
+        { k: "memo", label: "메모", type: "textarea" },
+      ], function (d) { return write("purchase_create", d, K); });
+    };
     list("purchases").then(function (rows) {
       $("t").innerHTML = table([
         { h: "일자", k: "orderDate", cls: "mono" }, { h: "품목", k: "item" },
         { h: "구입처", k: "vendor", cls: "dim" }, { h: "비목", k: "category", cls: "dim" },
         { h: "금액", cls: "num", f: function (r) { return esc(won(r.amount)); } },
         { h: "신청자", k: "requester", cls: "dim" }, { h: "과제", k: "projectCode", cls: "dim" },
-        { h: "상태", f: function (r) { return B(r, "status"); } },
-      ], rows, "구매 기록이 없습니다");
+        { h: "상태", cls: "act", f: function (r) { return statusSel("purchase_status", r.id, r.status, ST.purchase, K); } },
+      ].concat(r2 ? [{ h: "", cls: "act", f: function (r) { return delBtn("purchase_delete", r.id, K); } }] : []),
+        rows, "구매 기록이 없습니다");
     }).catch(showErr);
   };
 
+  /* ── 장비 ── */
   VIEWS.instruments = function (v) {
-    v.innerHTML = head("장비", "보유 장비와 점검 일정") + "<div id=t></div>";
+    var r2 = rank() >= 2, K = ["instruments"];
+    v.innerHTML = head("장비", "보유 장비와 점검 일정", r2 ? addBtn("addIn", "장비 등록") : "") + "<div id=t></div>";
+    if ($("addIn")) $("addIn").onclick = function () {
+      openForm("장비 등록", [
+        { k: "name", label: "장비명", req: true },
+        { k: "model", label: "모델" },
+        { k: "serial_no", label: "시리얼 번호" },
+        { k: "manager_id", label: "관리자", type: "select", opts: function () { return userOpts("— 관리자 선택 —"); } },
+        { k: "location", label: "위치" },
+        { k: "purchase_date", label: "구입일", type: "date" },
+        { k: "last_check_date", label: "최근 점검일", type: "date" },
+        { k: "next_check_date", label: "다음 점검일", type: "date" },
+        { k: "status", label: "상태", type: "select", opts: ST.instrument, def: "정상" },
+      ], function (d) { return write("instrument_create", d, K); });
+    };
     list("instruments").then(function (rows) {
       $("t").innerHTML = table([
         { h: "장비명", k: "name" }, { h: "모델", k: "model", cls: "dim" },
         { h: "관리자", k: "manager", cls: "dim" }, { h: "위치", k: "location", cls: "dim" },
         { h: "최근 점검", k: "lastCheckDate", cls: "mono" }, { h: "다음 점검", k: "nextCheckDate", cls: "mono" },
-        { h: "상태", f: function (r) { return B(r, "status"); } },
+        { h: "상태", cls: "act", f: function (r) { return statusSel("instrument_status", r.id, r.status, ST.instrument, K); } },
+        { h: "", cls: "act", f: function (r) {
+          return '<button class="btn sm" data-op="instrument_checked" data-id="' + r.id +
+            '" data-kinds="instruments">점검 완료</button>' + (r2 ? " " + delBtn("instrument_delete", r.id, K) : "");
+        } },
       ], rows, "등록된 장비가 없습니다");
     }).catch(showErr);
   };
 
+  /* ── 시료 ── */
   VIEWS.samples = function (v) {
-    v.innerHTML = head("시료 (LIMS)", "시료 접수·보관 현황") + "<div id=t></div>";
+    var r2 = rank() >= 2, K = ["samples"];
+    v.innerHTML = head("시료 (LIMS)", "시료 접수·보관 현황", addBtn("addSm", "시료 등록")) + "<div id=t></div>";
+    $("addSm").onclick = function () {
+      openForm("시료 등록", [
+        { k: "code", label: "시료번호", req: true },
+        { k: "name", label: "시료명", req: true },
+        { k: "type", label: "유형", type: "select", opts: ["혈액", "조직", "세포", "DNA", "RNA", "단백질", "기타"] },
+        { k: "source", label: "출처" },
+        { k: "project_id", label: "연계 과제", type: "select", opts: projectOpts },
+        { k: "owner_id", label: "담당자", type: "select", opts: function () { return userOpts("— 담당자 선택 —"); } },
+        { k: "storage_location", label: "보관 위치" },
+        { k: "received_date", label: "수령일", type: "date" },
+        { k: "status", label: "상태", type: "select", opts: ST.sample, def: "보관" },
+      ], function (d) { return write("sample_create", d, K); });
+    };
     list("samples").then(function (rows) {
       $("t").innerHTML = table([
         { h: "시료번호", k: "code", cls: "mono" }, { h: "시료명", k: "name" },
         { h: "유형", k: "type", cls: "dim" }, { h: "출처", k: "source", cls: "dim" },
         { h: "과제", k: "projectCode", cls: "dim" }, { h: "담당", k: "owner", cls: "dim" },
         { h: "보관 위치", k: "storageLocation", cls: "dim" }, { h: "수령일", k: "receivedDate", cls: "mono" },
-        { h: "상태", f: function (r) { return B(r, "status"); } },
-      ], rows, "등록된 시료가 없습니다");
+        { h: "상태", cls: "act", f: function (r) { return statusSel("sample_status", r.id, r.status, ST.sample, K); } },
+      ].concat(r2 ? [{ h: "", cls: "act", f: function (r) { return delBtn("sample_delete", r.id, K); } }] : []),
+        rows, "등록된 시료가 없습니다");
     }).catch(showErr);
   };
 
+  /* ── 실험 ── */
   VIEWS.experiments = function (v) {
-    v.innerHTML = head("실험 (LIMS)", "실험 기록") + "<div id=t></div>";
+    var r2 = rank() >= 2, K = ["experiments"];
+    v.innerHTML = head("실험 (LIMS)", "실험 기록", addBtn("addEx", "실험 등록")) + "<div id=t></div>";
+    $("addEx").onclick = function () {
+      openForm("실험 등록", [
+        { k: "code", label: "실험번호", req: true },
+        { k: "title", label: "제목", req: true },
+        { k: "project_id", label: "연계 과제", type: "select", opts: projectOpts },
+        { k: "sample_id", label: "연계 시료", type: "select", opts: sampleOpts },
+        { k: "assignee_id", label: "담당자", type: "select", opts: function () { return userOpts("— 담당자 선택 —"); } },
+        { k: "protocol", label: "프로토콜" },
+        { k: "start_date", label: "시작일", type: "date" },
+        { k: "status", label: "상태", type: "select", opts: ST.experiment, def: "계획" },
+        { k: "result_summary", label: "결과 요약", type: "textarea" },
+      ], function (d) { return write("experiment_create", d, K); });
+    };
     list("experiments").then(function (rows) {
       $("t").innerHTML = table([
         { h: "실험번호", k: "code", cls: "mono" }, { h: "제목", k: "title" },
         { h: "과제", k: "projectCode", cls: "dim" }, { h: "시료", k: "sampleCode", cls: "mono" },
         { h: "담당", k: "assignee", cls: "dim" }, { h: "프로토콜", k: "protocol", cls: "dim" },
-        { h: "시작일", k: "startDate", cls: "mono" }, { h: "상태", f: function (r) { return B(r, "status"); } },
+        { h: "시작일", k: "startDate", cls: "mono" },
+        { h: "상태", cls: "act", f: function (r) { return statusSel("experiment_status", r.id, r.status, ST.experiment, K); } },
         { h: "결과", k: "resultSummary" },
-      ], rows, "등록된 실험이 없습니다");
+      ].concat(r2 ? [{ h: "", cls: "act", f: function (r) { return delBtn("experiment_delete", r.id, K); } }] : []),
+        rows, "등록된 실험이 없습니다");
     }).catch(showErr);
   };
 
-  /* ── 구성원 (팀원 배정 — 운영자/팀원 구분) ── */
+  /* ── 구성원 (팀원 배정) ── */
   VIEWS.team = function (v, _id, flash) {
     v.innerHTML = head("구성원", "연구실별 팀원 배정 — 팀 운영자(연구책임자·랩매니저)와 팀원. 이 연구실에 배정되지 않은 계정은 접근할 수 없습니다.") +
       (flash ? '<div class="flash">' + esc(flash) + "</div>" : "") +
@@ -464,13 +797,14 @@
         '<option value="LAB_MANAGER">팀 운영자 (랩매니저)</option>' +
         (d.myRank >= 3 ? '<option value="PI">팀 운영자 (연구책임자)</option>' : "") +
         '</select><button type="submit" class="btn solid">배정</button>' +
-        '<span class="dim" style="font-size:11.5px;color:var(--muted)">기존 계정은 즉시 배정, 처음이면 초대 링크가 만들어집니다</span></form>';
+        '<span style="font-size:11.5px;color:var(--muted)">기존 계정은 즉시 배정, 처음이면 초대 링크가 만들어집니다</span></form>';
       $("assignForm").addEventListener("submit", function (e) {
         e.preventDefault();
-        post({ action: "assign", email: $("asEmail").value, role: $("asRole").value })
+        teamPost({ action: "assign", email: $("asEmail").value, role: $("asRole").value })
           .then(function (d2) {
             var msg = d2.assigned === "member" ? "배정했습니다."
               : "초대를 만들었습니다 — 초대 링크를 아래 목록에서 복사해 전달하세요.";
+            invalidate(["members"]);
             VIEWS.team($("view"), null, msg);
           }).catch(function (e2) { alert("실패: " + (e2.code || e2.message)); });
       });
@@ -484,9 +818,9 @@
       { h: "구분", f: function (r) { return roleBadge(r.role); } },
       { h: "상태", f: function (r) { return B(r, "workStatus"); } },
     ];
-    if (canManage) cols.push({ h: "관리", f: function (r) {
-      return '<button class="btn" data-act="role" data-id="' + r.membershipId + '" data-role="' + esc(r.role) + '">역할 변경</button> ' +
-        '<button class="btn danger" data-act="rm" data-id="' + r.membershipId + '">제외</button>';
+    if (canManage) cols.push({ h: "관리", cls: "act", f: function (r) {
+      return '<button class="btn sm" data-act="role" data-id="' + r.membershipId + '" data-role="' + esc(r.role) + '">역할 변경</button> ' +
+        '<button class="btn sm danger" data-act="rm" data-id="' + r.membershipId + '">제외</button>';
     } });
     $("t1").innerHTML = table(cols, d.members, "배정된 구성원이 없습니다");
 
@@ -496,16 +830,20 @@
       var id = Number(b.getAttribute("data-id"));
       if (b.getAttribute("data-act") === "rm") {
         if (!confirm("이 구성원을 연구실에서 제외할까요? (계정은 유지됩니다)")) return;
-        post({ action: "remove", membershipId: id })
-          .then(function () { VIEWS.team($("view"), null, "제외했습니다."); })
+        teamPost({ action: "remove", membershipId: id })
+          .then(function () { invalidate(["members"]); VIEWS.team($("view"), null, "제외했습니다."); })
           .catch(function (e2) { alert("실패: " + (e2.code || e2.message)); });
       } else {
-        var cur = b.getAttribute("data-role");
-        var next = prompt("역할 입력 — MEMBER(팀원) / LAB_MANAGER(운영자) / PI(책임자)", cur);
-        if (!next) return;
-        post({ action: "set_role", membershipId: id, role: next.trim().toUpperCase() })
-          .then(function () { VIEWS.team($("view"), null, "역할을 바꿨습니다."); })
-          .catch(function (e2) { alert("실패: " + (e2.code || e2.message)); });
+        openForm("역할 변경", [
+          { k: "role", label: "구분", type: "select", def: b.getAttribute("data-role"), opts: [
+            { v: "MEMBER", t: "팀원 (연구원)" },
+            { v: "LAB_MANAGER", t: "팀 운영자 (랩매니저)" },
+            { v: "PI", t: "팀 운영자 (연구책임자)" },
+          ] },
+        ], function (fd) {
+          return teamPost({ action: "set_role", membershipId: id, role: fd.role })
+            .then(function () { invalidate(["members"]); });
+        });
       }
     });
 
@@ -515,9 +853,9 @@
         { h: "이메일", k: "email" },
         { h: "구분", f: function (r) { return roleBadge(r.role); } },
         { h: "만료", k: "expiresAt", cls: "mono" },
-        { h: "초대 링크", f: function (r) {
-          return '<button class="btn" data-copy="' + esc(BACKEND + "/invite/" + r.token) + '">링크 복사</button> ' +
-            '<button class="btn danger" data-cancel="' + r.id + '">취소</button>';
+        { h: "초대 링크", cls: "act", f: function (r) {
+          return '<button class="btn sm" data-copy="' + esc(BACKEND + "/invite/" + r.token) + '">링크 복사</button> ' +
+            '<button class="btn sm danger" data-cancel="' + r.id + '">취소</button>';
         } },
       ], d.invites);
       $("t2").addEventListener("click", function (e) {
@@ -530,20 +868,48 @@
         }
         var x = e.target.closest ? e.target.closest("button[data-cancel]") : null;
         if (x) {
-          post({ action: "cancel_invite", id: Number(x.getAttribute("data-cancel")) })
+          teamPost({ action: "cancel_invite", id: Number(x.getAttribute("data-cancel")) })
             .then(function () { VIEWS.team($("view"), null, "초대를 취소했습니다."); })
             .catch(function (e2) { alert("실패: " + (e2.code || e2.message)); });
         }
       });
     }
   }
-  function post(body) {
+  function teamPost(body) {
     return req("/api/v1/lab/members?lab=" + LAB, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
   }
+
+  /* ── 행 조작 위임 (상태 select · 삭제 · 단일 op 버튼) ── */
+  $("view").addEventListener("change", function (e) {
+    var s2 = e.target.closest ? e.target.closest("select[data-sop]") : null;
+    if (!s2) return;
+    var kinds = (s2.getAttribute("data-kinds") || "").split(",").filter(Boolean);
+    write(s2.getAttribute("data-sop"), { id: Number(s2.getAttribute("data-id")), status: s2.value }, kinds)
+      .then(route)
+      .catch(function (err) { alert("실패: " + (err.code || err.message)); route(); });
+  });
+  $("view").addEventListener("click", function (e) {
+    var del = e.target.closest ? e.target.closest("button[data-del]") : null;
+    if (del) {
+      if (!confirm("정말 삭제할까요?")) return;
+      var kinds = (del.getAttribute("data-kinds") || "").split(",").filter(Boolean);
+      write(del.getAttribute("data-del"), { id: Number(del.getAttribute("data-id")) }, kinds)
+        .then(route)
+        .catch(function (err) { alert("실패: " + (err.code || err.message)); });
+      return;
+    }
+    var op = e.target.closest ? e.target.closest("button[data-op]") : null;
+    if (op) {
+      var kinds2 = (op.getAttribute("data-kinds") || "").split(",").filter(Boolean);
+      write(op.getAttribute("data-op"), { id: Number(op.getAttribute("data-id")) }, kinds2)
+        .then(route)
+        .catch(function (err) { alert("실패: " + (err.code || err.message)); });
+    }
+  });
 
   /* ── 내비게이션·라우터 ── */
   var NAV = [
@@ -569,13 +935,13 @@
   function renderNav() {
     var cur = location.hash || "#/";
     $("sideNav").innerHTML =
-      NAV.map(function (n) {
-        var on = cur === n[0] || (n[0] !== "#/" && cur.indexOf(n[0]) === 0);
-        return '<a href="' + n[0] + '"' + (on ? ' class="on"' : "") + ">" + esc(n[1]) + "</a>";
+      NAV.map(function (n2) {
+        var on = cur === n2[0] || (n2[0] !== "#/" && cur.indexOf(n2[0]) === 0);
+        return '<a href="' + n2[0] + '"' + (on ? ' class="on"' : "") + ">" + esc(n2[1]) + "</a>";
       }).join("") +
       '<div class="sep"></div><div class="cap">기존 화면</div>' +
-      LEGACY.map(function (n) {
-        return '<a href="#" data-legacy="' + esc(n[0]) + '">' + esc(n[1]) + " ↗</a>";
+      LEGACY.map(function (n2) {
+        return '<a href="#" data-legacy="' + esc(n2[0]) + '">' + esc(n2[1]) + " ↗</a>";
       }).join("");
   }
   function route() {
@@ -585,7 +951,7 @@
     var v = $("view");
     var m = /^#\/projects\/(\d+)$/.exec(h);
     if (m) return VIEWS.projectDetail(v, Number(m[1]));
-    var entry = NAV.find(function (n) { return n[0] === h; });
+    var entry = NAV.find(function (n2) { return n2[0] === h; });
     (VIEWS[(entry || NAV[0])[2]])(v);
   }
   window.addEventListener("hashchange", route);
@@ -667,7 +1033,6 @@
           alert("이 계정은 아직 LABIS 에 초대되지 않았습니다. 관리자에게 초대를 요청하세요.");
           return;
         }
-        // API 미지원(구판 백엔드)·일시 오류 — 기존 방식으로 입장
         openLegacy("/enter" + (lab ? "?lab=" + encodeURIComponent(lab) : ""));
       });
     });
