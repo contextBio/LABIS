@@ -41,7 +41,8 @@ export default async function LoginPage({
 html[data-sso] .sso-splash{display:flex!important}`}</style>
       <div
         className="sso-splash"
-        style={{ display: "none", position: "fixed", inset: 0, zIndex: 50,
+        style={{ display: "none", position: "fixed", top: 0, left: 0,
+                 width: "100vw", height: "100vh", zIndex: 50,
                  alignItems: "center", justifyContent: "center",
                  flexDirection: "column", gap: 8, background: "#f8fafc" }}
       >
