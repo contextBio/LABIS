@@ -104,6 +104,29 @@ export async function verifyContextBioToken(
   };
 }
 
+
+/** 검증 캐시 — API 는 요청마다 토큰을 다시 받으므로, 같은 토큰의 lookup 왕복을
+ *  줄인다 (contextbio_auth.py 의 5분 캐시와 같은 의미론 — 성공만 캐시한다). */
+const _cache = new Map<string, { exp: number; ident: ContextBioIdentity }>();
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const CACHE_MAX = 300;
+
+export async function verifyContextBioTokenCached(
+  idToken: string
+): Promise<ContextBioIdentity | null> {
+  const hit = _cache.get(idToken);
+  if (hit && hit.exp > Date.now()) return hit.ident;
+  const ident = await verifyContextBioToken(idToken);
+  if (ident) {
+    if (_cache.size >= CACHE_MAX) {
+      const first = _cache.keys().next().value;
+      if (first) _cache.delete(first);
+    }
+    _cache.set(idToken, { exp: Date.now() + CACHE_TTL_MS, ident });
+  }
+  return ident;
+}
+
 /** 통합 계정으로 로그인할 때 여는 주소. 돌아올 곳을 함께 넘긴다. */
 export function contextBioLoginUrl(returnTo: string): string {
   const site = process.env.CONTEXTBIO_SITE_URL || "https://contextbio.ai";
