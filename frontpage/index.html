@@ -5,19 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LABIS — Lab Intelligence System</title>
 <!-- LABIS 정적 프론트(SPA) — contextbio.ai/labis 에 실려 주소를 유지한 채 동작한다.
-     백엔드 주소의 정본은 cb-backend 메타(빌드가 채움 — 본 사이트=c1 …/labis,
-     개발 미러=…/labis-dev). 인증은 이 오리진의 통합계정 세션에서 받은 ID 토큰을
-     Bearer 로 싣는 BioWrit 모델이다 (쿠키 없음).
-     1단계 범위: 연구실 선택 → 대시보드(요약·마일스톤·실험·과제). 아직 포팅하지
-     않은 모듈은 "기존 화면"(c1, 토큰 릴레이로 무로그인 진입)으로 연다. -->
+     백엔드 주소의 정본은 cb-backend 메타(빌드가 채움), 인증은 통합계정 ID 토큰
+     Bearer(BioWrit 모델, 쿠키 없음), 데이터는 /api/v1/*.
+     조회 전 모듈 + 구성원 배정(운영자/팀원)이 여기서 돌고, 등록·수정과 시트연동·
+     학과관리는 "기존 화면"(c1 SSR, 토큰 릴레이 무로그인)으로 연다. -->
 <style>
   :root{
     --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --bg:#f8fafc;
     --brand:#0369a1; --brand-strong:#075985; --accent:#b45309; --card:#fff;
+    --ok:#047857; --bad:#b91c1c;
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:"Noto Sans KR",Inter,system-ui,-apple-system,"Segoe UI",sans-serif;
-       background:var(--bg);color:var(--ink);min-height:100vh}
+       background:var(--bg);color:var(--ink);min-height:100vh;font-size:14px}
   a{color:var(--brand);text-decoration:none}
   a:hover{text-decoration:underline}
   .center{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
@@ -27,55 +27,77 @@
          letter-spacing:-.02em;color:var(--brand)}
   .tagline{text-align:center;font-size:12.5px;color:var(--muted);margin-bottom:26px}
   label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:0 0 6px}
-  select,button.primary{width:100%;font-family:inherit}
-  select{padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:#fff;
-         color:var(--ink);font-size:14px}
+  select,input[type=email],input[type=text]{padding:9px 12px;border:1px solid var(--line);
+        border-radius:9px;background:#fff;color:var(--ink);font-size:13.5px;font-family:inherit}
   select:disabled{color:var(--muted);background:var(--bg)}
-  button.primary{margin-top:14px;padding:11px 12px;border:0;border-radius:9px;
-                 background:var(--brand);color:#fff;font-size:14.5px;font-weight:700;cursor:pointer}
+  #entry select{width:100%}
+  button.primary{width:100%;margin-top:14px;padding:11px 12px;border:0;border-radius:9px;
+                 background:var(--brand);color:#fff;font-size:14.5px;font-weight:700;cursor:pointer;font-family:inherit}
   button.primary:hover{background:var(--brand-strong)}
   .hint{margin-top:16px;text-align:center;font-size:11.5px;line-height:1.7;color:var(--muted)}
   .feats{margin:0 0 22px;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
   .feats li{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;
             padding:3px 10px;background:var(--bg)}
 
-  /* ── 대시보드 뷰 ── */
-  #dash{display:none;max-width:1080px;margin:0 auto;padding:22px 20px 48px}
-  .dash-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:18px}
-  .dash-head .brand-sm{font-size:20px;font-weight:900;color:var(--brand);letter-spacing:-.02em}
-  .dash-head select{width:auto;font-size:13px;padding:7px 10px}
-  .dash-head .who{margin-left:auto;font-size:12.5px;color:var(--muted)}
-  .dash-head .open-full{white-space:nowrap;padding:8px 14px;border:1px solid var(--line);
-        border-radius:9px;background:#fff;color:var(--ink);font-size:12.5px;cursor:pointer;font-family:inherit}
-  .dash-head .open-full:hover{border-color:var(--brand);color:var(--brand)}
-  h2{font-size:15px;margin:26px 0 10px}
+  /* ── 앱 셸 ── */
+  #app{display:none}
+  .apphead{display:flex;flex-wrap:wrap;align-items:center;gap:10px;
+           padding:10px 18px;background:#fff;border-bottom:1px solid var(--line)}
+  .apphead .brand-sm{font-size:19px;font-weight:900;color:var(--brand);letter-spacing:-.02em}
+  .apphead select{font-size:13px;padding:7px 10px}
+  .apphead .who{margin-left:auto;font-size:12.5px;color:var(--muted)}
+  .btn{white-space:nowrap;padding:7px 13px;border:1px solid var(--line);border-radius:9px;
+       background:#fff;color:var(--ink);font-size:12.5px;cursor:pointer;font-family:inherit}
+  .btn:hover{border-color:var(--brand);color:var(--brand)}
+  .btn.solid{background:var(--brand);border-color:var(--brand);color:#fff}
+  .btn.solid:hover{background:var(--brand-strong)}
+  .btn.danger:hover{border-color:var(--bad);color:var(--bad)}
+  .shell{display:flex;min-height:calc(100vh - 57px)}
+  nav.side{width:186px;flex:0 0 auto;border-right:1px solid var(--line);background:#fff;padding:12px 0}
+  nav.side a{display:block;padding:8px 18px;color:var(--ink);font-size:13.5px}
+  nav.side a:hover{background:var(--bg);text-decoration:none}
+  nav.side a.on{color:var(--brand);font-weight:700;background:#eff6ff}
+  nav.side .sep{margin:10px 18px;border-top:1px solid var(--line)}
+  nav.side .cap{padding:4px 18px;font-size:10.5px;color:#94a3b8;letter-spacing:.08em}
+  main#view{flex:1;min-width:0;padding:20px 22px 60px;max-width:1120px}
+  h1.pg{font-size:18px;margin:2px 0 4px}
+  p.desc{margin:0 0 16px;font-size:12.5px;color:var(--muted)}
+  h2{font-size:14.5px;margin:24px 0 8px}
   .stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
   .stat{display:block;background:#fff;border:1px solid var(--line);border-radius:12px;
-        padding:14px 16px;color:inherit}
+        padding:13px 15px;color:inherit}
   .stat:hover{border-color:var(--brand);text-decoration:none}
   .stat .k{font-size:11.5px;color:var(--muted)}
-  .stat .v{font-size:22px;font-weight:800;margin-top:2px}
+  .stat .v{font-size:21px;font-weight:800;margin-top:2px}
   .stat.accent .v{color:var(--accent)}
-  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);
-        border-radius:12px;overflow:hidden;font-size:13px}
-  th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--line)}
-  th{font-size:11.5px;color:var(--muted);background:var(--bg);font-weight:600}
+  .tblwrap{overflow-x:auto;background:#fff;border:1px solid var(--line);border-radius:12px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11.5px;color:var(--muted);background:var(--bg);font-weight:600;white-space:nowrap}
   tr:last-child td{border-bottom:0}
   td.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;white-space:nowrap}
   td.dim{color:var(--muted);font-size:12px;white-space:nowrap}
+  td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
   .empty-row{color:#94a3b8;text-align:center;padding:18px 0}
   .badge{display:inline-block;font-size:11px;padding:2px 9px;border-radius:999px;
-         background:var(--bg);border:1px solid var(--line);color:var(--muted)}
+         background:var(--bg);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+  .badge.op{background:#eff6ff;border-color:#bfdbfe;color:var(--brand)}
+  .pos{color:var(--ok)} .neg{color:var(--bad)}
   .grid2{display:grid;gap:18px}
-  @media(min-width:960px){.grid2{grid-template-columns:1fr 1fr}}
-  .note{margin-top:26px;font-size:11.5px;color:var(--muted);line-height:1.7}
-  #dashErr{display:none;margin:12px 0;padding:10px 14px;border-radius:9px;
-           background:#fef2f2;color:#b91c1c;font-size:13px}
+  @media(min-width:1000px){.grid2{grid-template-columns:1fr 1fr}}
+  .note{margin-top:22px;font-size:11.5px;color:var(--muted);line-height:1.7}
+  #err{display:none;margin:10px 0;padding:10px 14px;border-radius:9px;background:#fef2f2;color:var(--bad);font-size:13px}
+  .kv{display:grid;grid-template-columns:90px 1fr;gap:4px 12px;font-size:13px;
+      background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;max-width:640px}
+  .kv .k{color:var(--muted);font-size:12px}
+  form.assign{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 4px}
+  form.assign input{width:240px}
+  .flash{margin:8px 0;padding:8px 12px;border-radius:8px;background:#ecfdf5;color:var(--ok);font-size:12.5px}
 </style>
 </head>
 <body>
 
-<!-- ── 뷰 1: 연구실 선택 (입장) ── -->
+<!-- ── 뷰 1: 입장 (연구실 선택) ── -->
 <div class="center" id="entry">
   <main class="card">
     <div class="brand">LABIS</div>
@@ -97,41 +119,18 @@
   </main>
 </div>
 
-<!-- ── 뷰 2: 대시보드 ── -->
-<div id="dash">
-  <div class="dash-head">
+<!-- ── 뷰 2: 앱 ── -->
+<div id="app">
+  <div class="apphead">
     <span class="brand-sm">LABIS</span>
     <select id="dashLab" title="연구실 전환"></select>
     <span class="who" id="dashWho"></span>
-    <button type="button" class="open-full" id="openFull">전체 기능(편집·상세) — 기존 화면 열기</button>
+    <button type="button" class="btn" id="openFull">기존 화면(등록·수정) 열기</button>
   </div>
-  <div id="dashErr"></div>
-
-  <h2 id="dashTitle">대시보드</h2>
-  <div class="stats" id="statCards"></div>
-
-  <div class="grid2">
-    <div>
-      <h2>다가오는 마일스톤</h2>
-      <table><thead><tr><th>기한</th><th>과제</th><th>내용</th><th>상태</th></tr></thead>
-        <tbody id="msBody"></tbody></table>
-    </div>
-    <div>
-      <h2>최근 실험</h2>
-      <table><thead><tr><th>실험번호</th><th>제목</th><th>담당</th><th>상태</th></tr></thead>
-        <tbody id="exBody"></tbody></table>
-    </div>
+  <div class="shell">
+    <nav class="side" id="sideNav"></nav>
+    <main id="view"></main>
   </div>
-
-  <h2>진행 중 과제</h2>
-  <table><thead><tr><th>과제번호</th><th>과제명</th><th>책임자</th><th>기간</th><th>상태</th></tr></thead>
-    <tbody id="pjBody"></tbody></table>
-
-  <p class="note">
-    이 화면은 contextbio.ai 에서 직접 서빙되는 요약 보기입니다. 등록·수정·상세와 아직
-    옮기지 않은 모듈은 <b>기존 화면</b>(위 버튼)에서 계속 쓸 수 있습니다 — 모듈들은
-    순차적으로 이 화면으로 옮겨 옵니다.
-  </p>
 </div>
 
 <script>
@@ -143,13 +142,21 @@
   var LAB_KEY = "labis.activeLab";
 
   var $ = function (id) { return document.getElementById(id); };
-  var esc = function (s) {
+  function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
     });
-  };
+  }
+  function won(n) { return (Number(n) || 0).toLocaleString("ko-KR") + "원"; }
+  function pct(spent, total) { return total > 0 ? Math.round((spent / total) * 100) + "%" : "-"; }
+  var ROLE_KO = { PI: "연구책임자", LAB_MANAGER: "랩매니저", MEMBER: "연구원", DEPT_ADMIN: "학과관리자" };
+  function roleBadge(role) {
+    var op = role === "PI" || role === "LAB_MANAGER" || role === "DEPT_ADMIN";
+    return '<span class="badge' + (op ? " op" : "") + '">' +
+      (op ? "운영자 · " : "팀원 · ") + esc(ROLE_KO[role] || role) + "</span>";
+  }
 
-  /* ── 통합계정 토큰 (빌드가 싣는 브리지에서) ── */
+  /* ── 통합계정 토큰 ── */
   var WAIT_MS = 4000;
   function bridge() {
     if (window.ContextAuth) return Promise.resolve(window.ContextAuth);
@@ -172,46 +179,477 @@
         .catch(function () { return ""; });
     });
   }
-  function api(path, token) {
-    return fetch(BACKEND + path, { headers: { Authorization: "Bearer " + token } })
-      .then(function (r) {
-        return r.json().then(function (d) {
-          if (!r.ok || !d.ok) throw Object.assign(new Error(d.error || r.status), { code: d.error });
-          return d;
-        });
+  var TOKEN = "", ME = null, LAB = 0, CACHE = {};
+  function req(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({ Authorization: "Bearer " + TOKEN }, opts.headers || {});
+    return fetch(BACKEND + path, opts).then(function (r) {
+      return r.json().then(function (d) {
+        if (!r.ok || !d.ok) throw Object.assign(new Error(d.error || r.status), { code: d.error });
+        return d;
       });
+    });
   }
-  /* 기존 화면(c1)으로 — 토큰을 실어 보내 로그인 화면 없이 연다 */
-  function openLegacy(token, path) {
+  function list(kind) {
+    var key = LAB + ":" + kind;
+    if (CACHE[key]) return Promise.resolve(CACHE[key]);
+    return req("/api/v1/list?lab=" + LAB + "&kind=" + kind).then(function (d) {
+      CACHE[key] = d.rows; return d.rows;
+    });
+  }
+  function openLegacy(path) {
     location.href = BACKEND + "/login?next=" + encodeURIComponent(path) +
-      (token ? "#token=" + encodeURIComponent(token) : "");
+      (TOKEN ? "#token=" + encodeURIComponent(TOKEN) : "");
   }
 
-  /* ── 뷰 1: 선택창 ── */
-  var sel = $("labSelect");
-  function fillEntrySelect(labs, savedId) {
-    sel.innerHTML = "";
-    var any = document.createElement("option");
-    any.value = ""; any.textContent = labs.length ? "— 연구실을 고르세요 —" : "(등록된 연구실 없음)";
-    sel.appendChild(any);
-    labs.forEach(function (l) {
-      var o = document.createElement("option");
-      o.value = String(l.id != null ? l.id : l.labId);
-      o.textContent = l.name != null ? l.name : l.labName;
-      if (o.value === String(savedId)) o.selected = true;
-      sel.appendChild(o);
-    });
-    sel.disabled = false;
+  /* ── 범용 표 ── */
+  function table(cols, rows, emptyMsg) {
+    var h = '<div class="tblwrap"><table><thead><tr>' +
+      cols.map(function (c) { return "<th>" + esc(c.h) + "</th>"; }).join("") +
+      "</tr></thead><tbody>";
+    if (!rows || !rows.length) {
+      h += '<tr><td colspan="' + cols.length + '" class="empty-row">' + esc(emptyMsg || "데이터가 없습니다") + "</td></tr>";
+    } else {
+      h += rows.map(function (r) {
+        return "<tr>" + cols.map(function (c) {
+          var v = c.f ? c.f(r) : esc(r[c.k] == null || r[c.k] === "" ? "-" : r[c.k]);
+          return "<td" + (c.cls ? ' class="' + c.cls + '"' : "") + ">" + v + "</td>";
+        }).join("") + "</tr>";
+      }).join("");
+    }
+    return h + "</tbody></table></div>";
   }
+  var B = function (r, k) { return '<span class="badge">' + esc(r[k] || "-") + "</span>"; };
+
+  /* ── 화면들 ── */
+  function head(title, desc) {
+    return '<h1 class="pg">' + esc(title) + '</h1><p class="desc">' + esc(desc || "") + '</p><div id="err"></div>';
+  }
+  function showErr(e) {
+    var el = $("err"); if (!el) return;
+    el.textContent = "불러오지 못했습니다 (" + (e.code || e.message) + ")";
+    el.style.display = "block";
+  }
+
+  var VIEWS = {};
+
+  VIEWS.dash = function (v) {
+    v.innerHTML = head("대시보드 — " + labName(), "연구실 운영 현황 한눈에 보기") +
+      '<div class="stats" id="statCards"></div>' +
+      '<div class="grid2"><div><h2>다가오는 마일스톤</h2><div id="ms"></div></div>' +
+      '<div><h2>최근 실험</h2><div id="ex"></div></div></div>' +
+      '<h2>진행 중 과제</h2><div id="pj"></div>';
+    req("/api/v1/summary?lab=" + LAB).then(function (d) {
+      var s = d.stats;
+      var cards = [
+        ["진행 중 과제", s.activeProjects + "건", "#/projects", false],
+        ["보유 시료", s.samples + "건", "#/lims/samples", false],
+        ["진행 중 실험", s.runningExperiments + "건", "#/lims/experiments", false],
+        ["재직 인원", s.members + "명", "#/hr", false],
+        ["올해 논문", s.pubsThisYear + "편", "#/outcomes", false],
+        ["구매 진행 중", s.pendingPurchases + "건", "#/purchases", s.pendingPurchases > 0],
+        ["휴가 승인 대기", s.pendingLeaves + "건", "#/hr", s.pendingLeaves > 0],
+        ["점검 필요 장비", s.instrumentsNeedCheck + "대", "#/lims/instruments", s.instrumentsNeedCheck > 0],
+      ];
+      $("statCards").innerHTML = cards.map(function (c) {
+        return '<a class="stat' + (c[3] ? " accent" : "") + '" href="' + c[2] + '">' +
+          '<div class="k">' + esc(c[0]) + '</div><div class="v">' + esc(c[1]) + "</div></a>";
+      }).join("");
+      $("ms").innerHTML = table([
+        { h: "기한", k: "dueDate", cls: "mono" }, { h: "과제", k: "projectCode", cls: "dim" },
+        { h: "내용", k: "title" }, { h: "상태", f: function (r) { return B(r, "status"); } },
+      ], d.milestones, "예정된 마일스톤이 없습니다");
+      $("ex").innerHTML = table([
+        { h: "실험번호", k: "code", cls: "mono" }, { h: "제목", k: "title" },
+        { h: "담당", k: "assignee", cls: "dim" }, { h: "상태", f: function (r) { return B(r, "status"); } },
+      ], d.experiments, "등록된 실험이 없습니다");
+      $("pj").innerHTML = table([
+        { h: "과제번호", cls: "mono", f: function (r) { return '<a href="#/projects/' + r.id + '">' + esc(r.code) + "</a>"; } },
+        { h: "과제명", k: "title" }, { h: "책임자", k: "piName", cls: "dim" },
+        { h: "기간", cls: "dim", f: function (r) { return esc(r.startDate) + " ~ " + esc(r.endDate); } },
+        { h: "상태", f: function (r) { return B(r, "status"); } },
+      ], d.projects, "진행 중인 과제가 없습니다");
+    }).catch(showErr);
+  };
+
+  VIEWS.projects = function (v) {
+    v.innerHTML = head("과제관리", "과제·참여연구원·마일스톤·예산 집행") + '<div id="t"></div>';
+    list("projects").then(function (rows) {
+      $("t").innerHTML = table([
+        { h: "과제번호", cls: "mono", f: function (r) { return '<a href="#/projects/' + r.id + '">' + esc(r.code) + "</a>"; } },
+        { h: "과제명", k: "title" }, { h: "발주처", k: "sponsor", cls: "dim" },
+        { h: "책임자", k: "piName", cls: "dim" },
+        { h: "기간", cls: "dim", f: function (r) { return esc(r.startDate) + " ~ " + esc(r.endDate); } },
+        { h: "총 연구비", cls: "num", f: function (r) { return esc(won(r.totalBudget)); } },
+        { h: "집행률", cls: "num", f: function (r) { return esc(pct(r.spent, r.totalBudget)); } },
+        { h: "상태", f: function (r) { return B(r, "status"); } },
+      ], rows);
+    }).catch(showErr);
+  };
+
+  VIEWS.projectDetail = function (v, id) {
+    v.innerHTML = head("과제 상세", "") + '<div id="t">불러오는 중…</div>';
+    req("/api/v1/project?lab=" + LAB + "&id=" + id).then(function (d) {
+      var p = d.project;
+      v.querySelector("h1.pg").textContent = p.code + " — " + p.title;
+      $("t").innerHTML =
+        '<div class="kv">' +
+        '<span class="k">발주처</span><span>' + esc(p.sponsor || "-") + "</span>" +
+        '<span class="k">사업명</span><span>' + esc(p.program || "-") + "</span>" +
+        '<span class="k">책임자</span><span>' + esc(p.piName || "-") + "</span>" +
+        '<span class="k">기간</span><span>' + esc(p.startDate) + " ~ " + esc(p.endDate) + "</span>" +
+        '<span class="k">총 연구비</span><span>' + esc(won(p.totalBudget)) + "</span>" +
+        '<span class="k">집행</span><span>' + esc(won(p.spent)) + " (" + esc(pct(p.spent, p.totalBudget)) + ")</span>" +
+        '<span class="k">상태</span><span>' + B(p, "status") + "</span>" +
+        (p.memo ? '<span class="k">메모</span><span>' + esc(p.memo) + "</span>" : "") +
+        "</div>" +
+        "<h2>참여연구원</h2>" + table([
+          { h: "이름", k: "name" }, { h: "직급", k: "position", cls: "dim" },
+          { h: "역할", f: function (r) { return roleBadge(r.role); } },
+          { h: "참여율", cls: "num", f: function (r) { return esc((r.effortPct || 0) + "%"); } },
+        ], p.members) +
+        "<h2>마일스톤</h2>" + table([
+          { h: "기한", k: "dueDate", cls: "mono" }, { h: "내용", k: "title" },
+          { h: "상태", f: function (r) { return B(r, "status"); } },
+        ], p.milestones) +
+        "<h2>예산 집행</h2>" + table([
+          { h: "일자", k: "spentDate", cls: "mono" }, { h: "비목", k: "category", cls: "dim" },
+          { h: "내용", k: "item" }, { h: "금액", cls: "num", f: function (r) { return esc(won(r.amount)); } },
+        ], p.budgetItems) +
+        '<p class="note"><a href="#/projects">← 과제 목록으로</a></p>';
+    }).catch(showErr);
+  };
+
+  VIEWS.hr = function (v) {
+    v.innerHTML = head("인사관리", "명부 · 참여율 · 휴가") + "<h2>명부</h2><div id=t1></div><h2>휴가</h2><div id=t2></div>";
+    list("members").then(function (rows) {
+      $("t1").innerHTML = table([
+        { h: "이름", k: "name" }, { h: "직급", k: "position", cls: "dim" },
+        { h: "랩 역할", f: function (r) { return roleBadge(r.labRole); } },
+        { h: "이메일", k: "email", cls: "dim" }, { h: "입사일", k: "hireDate", cls: "mono" },
+        { h: "참여율 합계", cls: "num", f: function (r) { return esc((r.totalEffort || 0) + "%"); } },
+        { h: "상태", f: function (r) { return B(r, "workStatus"); } },
+      ], rows);
+    }).catch(showErr);
+    list("leaves").then(function (rows) {
+      $("t2").innerHTML = table([
+        { h: "이름", k: "user" }, { h: "구분", k: "type", cls: "dim" },
+        { h: "기간", cls: "dim", f: function (r) { return esc(r.startDate) + " ~ " + esc(r.endDate); } },
+        { h: "일수", k: "days", cls: "num" }, { h: "상태", f: function (r) { return B(r, "status"); } },
+      ], rows, "휴가 기록이 없습니다");
+    }).catch(showErr);
+  };
+
+  VIEWS.finance = function (v) {
+    v.innerHTML = head("연구비", "과제별 수지 분석 — 수입(입금) vs 지출(집행+구매)") +
+      "<div id=t1></div><h2>입금 내역</h2><div id=t2></div>";
+    list("finance").then(function (d) {
+      $("t1").innerHTML = table([
+        { h: "과제", cls: "mono", f: function (r) { return '<a href="#/projects/' + r.id + '">' + esc(r.code) + "</a>"; } },
+        { h: "과제명", k: "title" }, { h: "상태", f: function (r) { return B(r, "status"); } },
+        { h: "협약 연구비", cls: "num", f: function (r) { return esc(won(r.totalBudget)); } },
+        { h: "수입 (입금)", cls: "num", f: function (r) { return esc(won(r.income)); } },
+        { h: "지출 (집행)", cls: "num", f: function (r) { return esc(won(r.spentBudget)); } },
+        { h: "지출 (구매)", cls: "num", f: function (r) { return esc(won(r.spentPurchase)); } },
+        { h: "수지", cls: "num", f: function (r) { return '<span class="' + (r.balance < 0 ? "neg" : "pos") + '">' + esc(won(r.balance)) + "</span>"; } },
+        { h: "집행률", cls: "num", f: function (r) { return esc(pct(r.spent, r.totalBudget)); } },
+      ], d.rows) +
+      '<p class="note">과제 미지정 — 입금 ' + esc(won(d.unassigned.income)) +
+      " · 구매 지출 " + esc(won(d.unassigned.spentPurchase)) + "</p>";
+    }).catch(showErr);
+    list("fundincomes").then(function (rows) {
+      $("t2").innerHTML = table([
+        { h: "일자", k: "date", cls: "mono" }, { h: "과제", k: "projectCode", cls: "dim" },
+        { h: "내용", k: "note" }, { h: "금액", cls: "num", f: function (r) { return esc(won(r.amount)); } },
+      ], rows, "입금 기록이 없습니다");
+    }).catch(showErr);
+  };
+
+  VIEWS.outcomes = function (v) {
+    v.innerHTML = head("성과", "논문 · 특허 · 기술이전") +
+      "<h2>논문</h2><div id=t1></div><h2>특허</h2><div id=t2></div><h2>기술이전</h2><div id=t3></div>";
+    list("publications").then(function (rows) {
+      $("t1").innerHTML = table([
+        { h: "연도", k: "year", cls: "mono" }, { h: "제목", k: "title" },
+        { h: "저널", k: "journal", cls: "dim" }, { h: "저자", k: "authors", cls: "dim" },
+        { h: "DOI", f: function (r) { return r.doi ? '<a href="https://doi.org/' + esc(r.doi) + '" target="_blank" rel="noreferrer">' + esc(r.doi) + "</a>" : "-"; } },
+        { h: "과제", k: "projectCode", cls: "dim" },
+      ], rows, "등록된 논문이 없습니다");
+    }).catch(showErr);
+    list("patents").then(function (rows) {
+      $("t2").innerHTML = table([
+        { h: "일자", k: "date", cls: "mono" }, { h: "발명 명칭", k: "title" },
+        { h: "출원번호", k: "applicationNo", cls: "mono" }, { h: "등록번호", k: "registrationNo", cls: "mono" },
+        { h: "발명자", k: "inventors", cls: "dim" }, { h: "상태", f: function (r) { return B(r, "status"); } },
+        { h: "과제", k: "projectCode", cls: "dim" },
+      ], rows, "등록된 특허가 없습니다");
+    }).catch(showErr);
+    list("techtransfers").then(function (rows) {
+      $("t3").innerHTML = table([
+        { h: "계약일", k: "contractDate", cls: "mono" }, { h: "기술명", k: "title" },
+        { h: "이전 대상", k: "licensee", cls: "dim" },
+        { h: "기술료", cls: "num", f: function (r) { return esc(won(r.amount)); } },
+        { h: "과제", k: "projectCode", cls: "dim" },
+      ], rows, "기술이전 기록이 없습니다");
+    }).catch(showErr);
+  };
+
+  VIEWS.purchases = function (v) {
+    v.innerHTML = head("구매", "구매 신청·발주·입고") + "<div id=t></div>";
+    list("purchases").then(function (rows) {
+      $("t").innerHTML = table([
+        { h: "일자", k: "orderDate", cls: "mono" }, { h: "품목", k: "item" },
+        { h: "구입처", k: "vendor", cls: "dim" }, { h: "비목", k: "category", cls: "dim" },
+        { h: "금액", cls: "num", f: function (r) { return esc(won(r.amount)); } },
+        { h: "신청자", k: "requester", cls: "dim" }, { h: "과제", k: "projectCode", cls: "dim" },
+        { h: "상태", f: function (r) { return B(r, "status"); } },
+      ], rows, "구매 기록이 없습니다");
+    }).catch(showErr);
+  };
+
+  VIEWS.instruments = function (v) {
+    v.innerHTML = head("장비", "보유 장비와 점검 일정") + "<div id=t></div>";
+    list("instruments").then(function (rows) {
+      $("t").innerHTML = table([
+        { h: "장비명", k: "name" }, { h: "모델", k: "model", cls: "dim" },
+        { h: "관리자", k: "manager", cls: "dim" }, { h: "위치", k: "location", cls: "dim" },
+        { h: "최근 점검", k: "lastCheckDate", cls: "mono" }, { h: "다음 점검", k: "nextCheckDate", cls: "mono" },
+        { h: "상태", f: function (r) { return B(r, "status"); } },
+      ], rows, "등록된 장비가 없습니다");
+    }).catch(showErr);
+  };
+
+  VIEWS.samples = function (v) {
+    v.innerHTML = head("시료 (LIMS)", "시료 접수·보관 현황") + "<div id=t></div>";
+    list("samples").then(function (rows) {
+      $("t").innerHTML = table([
+        { h: "시료번호", k: "code", cls: "mono" }, { h: "시료명", k: "name" },
+        { h: "유형", k: "type", cls: "dim" }, { h: "출처", k: "source", cls: "dim" },
+        { h: "과제", k: "projectCode", cls: "dim" }, { h: "담당", k: "owner", cls: "dim" },
+        { h: "보관 위치", k: "storageLocation", cls: "dim" }, { h: "수령일", k: "receivedDate", cls: "mono" },
+        { h: "상태", f: function (r) { return B(r, "status"); } },
+      ], rows, "등록된 시료가 없습니다");
+    }).catch(showErr);
+  };
+
+  VIEWS.experiments = function (v) {
+    v.innerHTML = head("실험 (LIMS)", "실험 기록") + "<div id=t></div>";
+    list("experiments").then(function (rows) {
+      $("t").innerHTML = table([
+        { h: "실험번호", k: "code", cls: "mono" }, { h: "제목", k: "title" },
+        { h: "과제", k: "projectCode", cls: "dim" }, { h: "시료", k: "sampleCode", cls: "mono" },
+        { h: "담당", k: "assignee", cls: "dim" }, { h: "프로토콜", k: "protocol", cls: "dim" },
+        { h: "시작일", k: "startDate", cls: "mono" }, { h: "상태", f: function (r) { return B(r, "status"); } },
+        { h: "결과", k: "resultSummary" },
+      ], rows, "등록된 실험이 없습니다");
+    }).catch(showErr);
+  };
+
+  /* ── 구성원 (팀원 배정 — 운영자/팀원 구분) ── */
+  VIEWS.team = function (v, _id, flash) {
+    v.innerHTML = head("구성원", "연구실별 팀원 배정 — 팀 운영자(연구책임자·랩매니저)와 팀원. 이 연구실에 배정되지 않은 계정은 접근할 수 없습니다.") +
+      (flash ? '<div class="flash">' + esc(flash) + "</div>" : "") +
+      '<div id="assignBox"></div><h2>배정된 구성원</h2><div id="t1"></div>' +
+      '<div id="inviteSec" style="display:none"><h2>대기 중인 초대</h2><div id="t2"></div></div>';
+    req("/api/v1/lab/members?lab=" + LAB).then(function (d) { renderTeam(d); }).catch(showErr);
+  };
+
+  function renderTeam(d) {
+    var canAssign = d.myRank >= 2, canManage = d.myRank >= 3;
+    if (canAssign) {
+      $("assignBox").innerHTML =
+        '<form class="assign" id="assignForm">' +
+        '<input type="email" id="asEmail" required placeholder="이메일 (contextBio 계정)">' +
+        '<select id="asRole"><option value="MEMBER">팀원 (연구원)</option>' +
+        '<option value="LAB_MANAGER">팀 운영자 (랩매니저)</option>' +
+        (d.myRank >= 3 ? '<option value="PI">팀 운영자 (연구책임자)</option>' : "") +
+        '</select><button type="submit" class="btn solid">배정</button>' +
+        '<span class="dim" style="font-size:11.5px;color:var(--muted)">기존 계정은 즉시 배정, 처음이면 초대 링크가 만들어집니다</span></form>';
+      $("assignForm").addEventListener("submit", function (e) {
+        e.preventDefault();
+        post({ action: "assign", email: $("asEmail").value, role: $("asRole").value })
+          .then(function (d2) {
+            var msg = d2.assigned === "member" ? "배정했습니다."
+              : "초대를 만들었습니다 — 초대 링크를 아래 목록에서 복사해 전달하세요.";
+            VIEWS.team($("view"), null, msg);
+          }).catch(function (e2) { alert("실패: " + (e2.code || e2.message)); });
+      });
+    } else {
+      $("assignBox").innerHTML = '<p class="note">배정 변경은 팀 운영자만 할 수 있습니다.</p>';
+    }
+
+    var cols = [
+      { h: "이름", k: "name" }, { h: "이메일", k: "email", cls: "dim" },
+      { h: "직급", k: "position", cls: "dim" },
+      { h: "구분", f: function (r) { return roleBadge(r.role); } },
+      { h: "상태", f: function (r) { return B(r, "workStatus"); } },
+    ];
+    if (canManage) cols.push({ h: "관리", f: function (r) {
+      return '<button class="btn" data-act="role" data-id="' + r.membershipId + '" data-role="' + esc(r.role) + '">역할 변경</button> ' +
+        '<button class="btn danger" data-act="rm" data-id="' + r.membershipId + '">제외</button>';
+    } });
+    $("t1").innerHTML = table(cols, d.members, "배정된 구성원이 없습니다");
+
+    if (canManage) $("t1").addEventListener("click", function (e) {
+      var b = e.target.closest ? e.target.closest("button[data-act]") : null;
+      if (!b) return;
+      var id = Number(b.getAttribute("data-id"));
+      if (b.getAttribute("data-act") === "rm") {
+        if (!confirm("이 구성원을 연구실에서 제외할까요? (계정은 유지됩니다)")) return;
+        post({ action: "remove", membershipId: id })
+          .then(function () { VIEWS.team($("view"), null, "제외했습니다."); })
+          .catch(function (e2) { alert("실패: " + (e2.code || e2.message)); });
+      } else {
+        var cur = b.getAttribute("data-role");
+        var next = prompt("역할 입력 — MEMBER(팀원) / LAB_MANAGER(운영자) / PI(책임자)", cur);
+        if (!next) return;
+        post({ action: "set_role", membershipId: id, role: next.trim().toUpperCase() })
+          .then(function () { VIEWS.team($("view"), null, "역할을 바꿨습니다."); })
+          .catch(function (e2) { alert("실패: " + (e2.code || e2.message)); });
+      }
+    });
+
+    if (d.invites.length && canAssign) {
+      $("inviteSec").style.display = "block";
+      $("t2").innerHTML = table([
+        { h: "이메일", k: "email" },
+        { h: "구분", f: function (r) { return roleBadge(r.role); } },
+        { h: "만료", k: "expiresAt", cls: "mono" },
+        { h: "초대 링크", f: function (r) {
+          return '<button class="btn" data-copy="' + esc(BACKEND + "/invite/" + r.token) + '">링크 복사</button> ' +
+            '<button class="btn danger" data-cancel="' + r.id + '">취소</button>';
+        } },
+      ], d.invites);
+      $("t2").addEventListener("click", function (e) {
+        var c = e.target.closest ? e.target.closest("button[data-copy]") : null;
+        if (c) {
+          navigator.clipboard.writeText(c.getAttribute("data-copy")).then(function () {
+            c.textContent = "복사됨"; setTimeout(function () { c.textContent = "링크 복사"; }, 1500);
+          });
+          return;
+        }
+        var x = e.target.closest ? e.target.closest("button[data-cancel]") : null;
+        if (x) {
+          post({ action: "cancel_invite", id: Number(x.getAttribute("data-cancel")) })
+            .then(function () { VIEWS.team($("view"), null, "초대를 취소했습니다."); })
+            .catch(function (e2) { alert("실패: " + (e2.code || e2.message)); });
+        }
+      });
+    }
+  }
+  function post(body) {
+    return req("/api/v1/lab/members?lab=" + LAB, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  /* ── 내비게이션·라우터 ── */
+  var NAV = [
+    ["#/", "대시보드", "dash"],
+    ["#/projects", "과제", "projects"],
+    ["#/hr", "인사", "hr"],
+    ["#/finance", "연구비", "finance"],
+    ["#/outcomes", "성과", "outcomes"],
+    ["#/purchases", "구매", "purchases"],
+    ["#/lims/instruments", "장비", "instruments"],
+    ["#/lims/samples", "시료 (LIMS)", "samples"],
+    ["#/lims/experiments", "실험 (LIMS)", "experiments"],
+    ["#/team", "구성원", "team"],
+  ];
+  var LEGACY = [
+    ["/sync", "구글시트 연동"],
+    ["/admin/labs", "학과 관리"],
+  ];
+  function labName() {
+    var l = (ME.labs || []).find(function (x) { return x.labId === LAB; });
+    return l ? l.labName : "";
+  }
+  function renderNav() {
+    var cur = location.hash || "#/";
+    $("sideNav").innerHTML =
+      NAV.map(function (n) {
+        var on = cur === n[0] || (n[0] !== "#/" && cur.indexOf(n[0]) === 0);
+        return '<a href="' + n[0] + '"' + (on ? ' class="on"' : "") + ">" + esc(n[1]) + "</a>";
+      }).join("") +
+      '<div class="sep"></div><div class="cap">기존 화면</div>' +
+      LEGACY.map(function (n) {
+        return '<a href="#" data-legacy="' + esc(n[0]) + '">' + esc(n[1]) + " ↗</a>";
+      }).join("");
+  }
+  function route() {
+    if (!ME) return;
+    renderNav();
+    var h = location.hash || "#/";
+    var v = $("view");
+    var m = /^#\/projects\/(\d+)$/.exec(h);
+    if (m) return VIEWS.projectDetail(v, Number(m[1]));
+    var entry = NAV.find(function (n) { return n[0] === h; });
+    (VIEWS[(entry || NAV[0])[2]])(v);
+  }
+  window.addEventListener("hashchange", route);
+  $("sideNav").addEventListener("click", function (e) {
+    var a = e.target.closest ? e.target.closest("a[data-legacy]") : null;
+    if (a) { e.preventDefault(); openLegacy(a.getAttribute("data-legacy")); }
+  });
+  $("openFull").addEventListener("click", function () {
+    openLegacy("/enter" + (LAB ? "?lab=" + LAB : ""));
+  });
+  $("dashLab").addEventListener("change", function () {
+    LAB = Number(this.value); CACHE = {};
+    try { localStorage.setItem(LAB_KEY, String(LAB)); } catch (_) {}
+    route();
+  });
+
+  /* ── 입장 흐름 ── */
+  var sel = $("labSelect");
   fetch(BACKEND + "/api/labs")
     .then(function (r) { if (!r.ok) throw 0; return r.json(); })
-    .then(function (d) { fillEntrySelect((d && d.labs) || [], localStorage.getItem(LAB_KEY)); })
+    .then(function (d) {
+      var labs = (d && d.labs) || [];
+      sel.innerHTML = "";
+      var any = document.createElement("option");
+      any.value = ""; any.textContent = labs.length ? "— 연구실을 고르세요 —" : "(등록된 연구실 없음)";
+      sel.appendChild(any);
+      labs.forEach(function (l) {
+        var o = document.createElement("option");
+        o.value = String(l.id); o.textContent = l.name;
+        if (o.value === String(localStorage.getItem(LAB_KEY))) o.selected = true;
+        sel.appendChild(o);
+      });
+      sel.disabled = false;
+    })
     .catch(function () {
       sel.innerHTML = '<option value="">목록을 불러오지 못했습니다 — 그대로 입장하세요</option>';
       sel.disabled = false;
     });
 
   var tokenPromise = idToken();
+
+  function enterApp(token, wantLab) {
+    TOKEN = token;
+    return req("/api/v1/me").then(function (d) {
+      ME = d;
+      var labs = d.labs || [];
+      if (!labs.length) throw Object.assign(new Error("no_lab"), { code: "not_invited" });
+      LAB = labs.some(function (l) { return String(l.labId) === String(wantLab); })
+        ? Number(wantLab) : labs[0].labId;
+      try { localStorage.setItem(LAB_KEY, String(LAB)); } catch (_) {}
+      var dl = $("dashLab");
+      dl.innerHTML = "";
+      labs.forEach(function (l) {
+        var o = document.createElement("option");
+        o.value = String(l.labId); o.textContent = l.labName;
+        if (l.labId === LAB) o.selected = true;
+        dl.appendChild(o);
+      });
+      $("dashWho").textContent = d.user.name + " · " + d.user.email;
+      $("entry").style.display = "none";
+      $("app").style.display = "block";
+      route();
+    });
+  }
 
   $("enterForm").addEventListener("submit", function (e) {
     e.preventDefault();
@@ -220,114 +658,26 @@
     btn.disabled = true; btn.textContent = "입장 중…";
     tokenPromise.then(function (token) {
       if (!token) {
-        // 미로그인 — 이 오리진의 통합 로그인으로 갔다가 이 페이지로 돌아온다
         location.href = "/login?next=" + encodeURIComponent(location.pathname);
         return;
       }
-      if (lab) { try { localStorage.setItem(LAB_KEY, lab); } catch (_) {} }
-      showDashboard(token).catch(function (err) {
-        // API 미지원(구판 백엔드)이나 일시 오류 — 기존 방식으로 입장
+      enterApp(token, lab).catch(function (err) {
         if (err && err.code === "not_invited") {
           btn.disabled = false; btn.textContent = "LABIS 입장";
           alert("이 계정은 아직 LABIS 에 초대되지 않았습니다. 관리자에게 초대를 요청하세요.");
           return;
         }
-        openLegacy(token, "/enter" + (lab ? "?lab=" + encodeURIComponent(lab) : ""));
+        // API 미지원(구판 백엔드)·일시 오류 — 기존 방식으로 입장
+        openLegacy("/enter" + (lab ? "?lab=" + encodeURIComponent(lab) : ""));
       });
     });
   });
 
-  /* ── 뷰 2: 대시보드 ── */
-  var ME = null, TOKEN = "";
-
-  function showDashboard(token) {
-    TOKEN = token;
-    return api("/api/v1/me", token).then(function (d) {
-      ME = d;
-      var labs = d.labs || [];
-      if (!labs.length) throw Object.assign(new Error("no_lab"), { code: "not_invited" });
-      var saved = localStorage.getItem(LAB_KEY);
-      var lab = labs.some(function (l) { return String(l.labId) === String(saved); })
-        ? Number(saved) : labs[0].labId;
-
-      var dl = $("dashLab");
-      dl.innerHTML = "";
-      labs.forEach(function (l) {
-        var o = document.createElement("option");
-        o.value = String(l.labId); o.textContent = l.labName;
-        if (l.labId === lab) o.selected = true;
-        dl.appendChild(o);
-      });
-      $("dashWho").textContent = d.user.name + " · " + d.user.email;
-      $("entry").style.display = "none";
-      $("dash").style.display = "block";
-      return loadSummary(lab);
-    });
-  }
-
-  function loadSummary(lab) {
-    try { localStorage.setItem(LAB_KEY, String(lab)); } catch (_) {}
-    $("dashErr").style.display = "none";
-    return api("/api/v1/summary?lab=" + lab, TOKEN).then(function (d) {
-      var labName = (ME.labs.find(function (l) { return l.labId === Number(lab); }) || {}).labName || "";
-      $("dashTitle").textContent = "대시보드 — " + labName;
-
-      var s = d.stats;
-      var cards = [
-        ["진행 중 과제", s.activeProjects + "건", "/projects", false],
-        ["보유 시료", s.samples + "건", "/lims/samples", false],
-        ["진행 중 실험", s.runningExperiments + "건", "/lims/experiments", false],
-        ["재직 인원", s.members + "명", "/hr", false],
-        ["올해 논문", s.pubsThisYear + "편", "/outcomes", false],
-        ["구매 진행 중", s.pendingPurchases + "건", "/purchases", s.pendingPurchases > 0],
-        ["휴가 승인 대기", s.pendingLeaves + "건", "/hr", s.pendingLeaves > 0],
-        ["점검 필요 장비", s.instrumentsNeedCheck + "대", "/lims/instruments", s.instrumentsNeedCheck > 0],
-      ];
-      $("statCards").innerHTML = cards.map(function (c) {
-        return '<a class="stat' + (c[3] ? " accent" : "") + '" href="#" data-path="' + esc(c[2]) + '">' +
-          '<div class="k">' + esc(c[0]) + '</div><div class="v">' + esc(c[1]) + "</div></a>";
-      }).join("");
-
-      $("msBody").innerHTML = (d.milestones.length ? d.milestones.map(function (m) {
-        return "<tr><td class=mono>" + esc(m.dueDate) + "</td><td class=dim>" + esc(m.projectCode) +
-          "</td><td>" + esc(m.title) + "</td><td><span class=badge>" + esc(m.status) + "</span></td></tr>";
-      }) : ['<tr><td colspan="4" class="empty-row">예정된 마일스톤이 없습니다</td></tr>']).join("");
-
-      $("exBody").innerHTML = (d.experiments.length ? d.experiments.map(function (x) {
-        return "<tr><td class=mono>" + esc(x.code) + "</td><td>" + esc(x.title) + "</td><td class=dim>" +
-          esc(x.assignee || "-") + "</td><td><span class=badge>" + esc(x.status) + "</span></td></tr>";
-      }) : ['<tr><td colspan="4" class="empty-row">등록된 실험이 없습니다</td></tr>']).join("");
-
-      $("pjBody").innerHTML = (d.projects.length ? d.projects.map(function (p) {
-        return "<tr><td class=mono>" + esc(p.code) + "</td><td>" + esc(p.title) + "</td><td class=dim>" +
-          esc(p.piName || "-") + "</td><td class=dim>" + esc(p.startDate) + " ~ " + esc(p.endDate) +
-          "</td><td><span class=badge>" + esc(p.status) + "</span></td></tr>";
-      }) : ['<tr><td colspan="5" class="empty-row">진행 중인 과제가 없습니다</td></tr>']).join("");
-    }).catch(function (e) {
-      var el = $("dashErr");
-      el.textContent = "요약을 불러오지 못했습니다 (" + (e.code || e.message) + "). 잠시 후 다시 시도하세요.";
-      el.style.display = "block";
-    });
-  }
-
-  $("dashLab").addEventListener("change", function () { loadSummary(Number(this.value)); });
-  $("openFull").addEventListener("click", function () {
-    var lab = $("dashLab").value;
-    openLegacy(TOKEN, "/enter" + (lab ? "?lab=" + encodeURIComponent(lab) : ""));
-  });
-  $("statCards").addEventListener("click", function (e) {
-    var a = e.target.closest ? e.target.closest("a.stat") : null;
-    if (!a) return;
-    e.preventDefault();
-    openLegacy(TOKEN, a.getAttribute("data-path") || "/");
-  });
-
-  // 로그인에서 돌아왔거나 이미 로그인된 채 재방문한 경우: 저장된 랩이 있으면
-  // 선택창을 거치지 않고 곧장 대시보드로.
+  // 재방문: 로그인돼 있고 저장된 랩이 있으면 선택창 없이 곧장 앱으로
   tokenPromise.then(function (token) {
     if (!token) return;
     var saved = localStorage.getItem(LAB_KEY);
-    if (saved) { showDashboard(token).catch(function () { /* 선택창 유지 */ }); }
+    if (saved) { enterApp(token, saved).catch(function () { /* 선택창 유지 */ }); }
   });
 })();
 </script>
