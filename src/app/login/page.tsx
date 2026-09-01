@@ -28,6 +28,26 @@ export default async function LoginPage({
 
   return (
     <div className="flex min-h-[calc(100vh-2.25rem)] items-center justify-center bg-slate-50 px-4">
+      {/* 토큰 릴레이(#token=)로 온 경우: 로그인 폼이 한 프레임 비쳤다 사라지는
+          깜빡임을 없앤다 — 폼 대신 "입장 중" 스플래시를 즉시 띄우고, 소비는
+          ContextBioSignIn 이 한다(실패하면 그쪽에서 폼을 되살린다). */}
+      <script
+        dangerouslySetInnerHTML={{
+          __html:
+            "if(/(^|[#&])token=/.test(location.hash))document.documentElement.setAttribute('data-sso','1');",
+        }}
+      />
+      <style>{`html[data-sso] .card{visibility:hidden}
+html[data-sso] .sso-splash{display:flex!important}`}</style>
+      <div
+        className="sso-splash"
+        style={{ display: "none", position: "fixed", inset: 0, zIndex: 50,
+                 alignItems: "center", justifyContent: "center",
+                 flexDirection: "column", gap: 8, background: "#f8fafc" }}
+      >
+        <div style={{ fontSize: 24, fontWeight: 900, color: "#0369a1" }}>LABIS</div>
+        <div style={{ fontSize: 13, color: "#64748b" }}>입장 중…</div>
+      </div>
       <div className="card w-full max-w-sm">
         <div className="mb-6 text-center">
           <div className="text-2xl font-black tracking-tight text-sky-700">LABIS</div>

@@ -43,6 +43,7 @@ export default function ContextBioSignIn({
           return;
         }
         setBusy(false);
+        document.documentElement.removeAttribute("data-sso");  // 스플래시 → 폼 복귀
         setError(
           d?.error === "not_invited"
             ? "이 계정은 아직 LABIS 에 초대되지 않았습니다. 관리자에게 초대를 요청하세요."
@@ -53,6 +54,7 @@ export default function ContextBioSignIn({
       })
       .catch(() => {
         setBusy(false);
+        document.documentElement.removeAttribute("data-sso");  // 스플래시 → 폼 복귀
         setError("통합 계정 로그인에 실패했습니다. 다시 시도하세요.");
       });
   }, [next, postUrl]);
