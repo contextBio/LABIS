@@ -9,7 +9,9 @@
  * 운영자(랩매니저) 이상만. 시트 읽기·DB 반영이 오래 걸릴 수 있어 정적 최적화를 끈다.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { apiUser, apiLab, apiRank, withCors, corsPreflight } from "@/lib/apiGuard";
+import {
+  apiUser, apiLab, apiRank, apiMenuAllowed, menuForbidden, withCors, corsPreflight,
+} from "@/lib/apiGuard";
 import {
   parseTabs, isItemTab, itemStatus, importItemSheet, saveItemSheet,
   runImportAll, runExportAll, readSyncLog, serviceAccountEmail, sheetGuide,
@@ -28,6 +30,7 @@ export async function GET(req: NextRequest) {
   if (apiRank(user, labId) < MIN_RANK) {
     return withCors(req, NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }));
   }
+  if (!(await apiMenuAllowed(user, labId, "sheets", "edit"))) return menuForbidden(req);
   const tabs = parseTabs(req.nextUrl.searchParams.get("tabs") || "");
   const rows = await itemStatus(labId, tabs);
   // 전용 화면(구글시트 연동)만 부가 정보까지 — 메뉴 안 패널은 목록만 받는다
@@ -54,6 +57,7 @@ export async function POST(req: NextRequest) {
   if (apiRank(user, labId) < MIN_RANK) {
     return withCors(req, NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }));
   }
+  if (!(await apiMenuAllowed(user, labId, "sheets", "edit"))) return menuForbidden(req);
 
   const body = (await req.json().catch(() => ({}))) as { op?: string; tab?: string; url?: string };
 

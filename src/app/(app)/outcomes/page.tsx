@@ -11,14 +11,15 @@ import { Badge, PageHeader, Section, won } from "@/components/ui";
 export const dynamic = "force-dynamic";
 
 export default async function OutcomesPage() {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "outcomes", "view");
   const [pubs, patents, transfers, projects] = await Promise.all([
     listPublications(ctx.labId),
     listPatents(ctx.labId),
     listTechTransfers(ctx.labId),
     listProjects(ctx.labId),
   ]);
-  const canManage = ctx.role === "PI" || ctx.role === "LAB_MANAGER";
+  const canEdit = ctx.level === "edit";
+  const canManage = canEdit && (ctx.role === "PI" || ctx.role === "LAB_MANAGER");
 
   const projectSelect = (
     <select name="project_id" className="inp">
@@ -72,15 +73,17 @@ export default async function OutcomesPage() {
             )}
           </tbody>
         </table>
-        <form action={createPublication} className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <input name="title" required placeholder="논문 제목 *" className="inp col-span-2" />
-          <input name="journal" placeholder="저널명" className="inp" />
-          <input name="year" placeholder="연도 (예: 2026)" className="inp" />
-          <input name="authors" placeholder="저자 (교신·1저자 표기 자유)" className="inp col-span-2" />
-          <input name="doi" placeholder="DOI" className="inp" />
-          {projectSelect}
-          <button className="btn justify-center">논문 추가</button>
-        </form>
+        {canEdit && (
+          <form action={createPublication} className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <input name="title" required placeholder="논문 제목 *" className="inp col-span-2" />
+            <input name="journal" placeholder="저널명" className="inp" />
+            <input name="year" placeholder="연도 (예: 2026)" className="inp" />
+            <input name="authors" placeholder="저자 (교신·1저자 표기 자유)" className="inp col-span-2" />
+            <input name="doi" placeholder="DOI" className="inp" />
+            {projectSelect}
+            <button className="btn justify-center">논문 추가</button>
+          </form>
+        )}
       </Section>
 
       <Section title={`특허 (${patents.length}건)`}>
@@ -101,13 +104,15 @@ export default async function OutcomesPage() {
                   {p.project ? <Link href={`/projects/${p.projectId}`} className="text-sky-600 hover:underline">{p.project.code}</Link> : "-"}
                 </td>
                 <td className="whitespace-nowrap text-right">
-                  <form action={setPatentStatus} className="inline-flex items-center gap-1">
-                    <input type="hidden" name="id" value={p.id} />
-                    <select name="status" defaultValue={p.status} className="inp !w-auto !py-0.5 !text-xs">
-                      <option>출원</option><option>등록</option><option>거절</option><option>포기</option>
-                    </select>
-                    <button className="btn-ghost">변경</button>
-                  </form>
+                  {canEdit && (
+                    <form action={setPatentStatus} className="inline-flex items-center gap-1">
+                      <input type="hidden" name="id" value={p.id} />
+                      <select name="status" defaultValue={p.status} className="inp !w-auto !py-0.5 !text-xs">
+                        <option>출원</option><option>등록</option><option>거절</option><option>포기</option>
+                      </select>
+                      <button className="btn-ghost">변경</button>
+                    </form>
+                  )}
                   {canManage && (
                     <>
                       {" "}
@@ -125,18 +130,20 @@ export default async function OutcomesPage() {
             )}
           </tbody>
         </table>
-        <form action={createPatent} className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <input name="title" required placeholder="발명 명칭 *" className="inp col-span-2" />
-          <input name="application_no" placeholder="출원번호" className="inp" />
-          <input name="registration_no" placeholder="등록번호" className="inp" />
-          <input name="inventors" placeholder="발명자" className="inp" />
-          <input name="date" type="date" className="inp" />
-          <select name="status" className="inp">
-            <option>출원</option><option>등록</option>
-          </select>
-          {projectSelect}
-          <button className="btn justify-center md:col-start-4">특허 추가</button>
-        </form>
+        {canEdit && (
+          <form action={createPatent} className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <input name="title" required placeholder="발명 명칭 *" className="inp col-span-2" />
+            <input name="application_no" placeholder="출원번호" className="inp" />
+            <input name="registration_no" placeholder="등록번호" className="inp" />
+            <input name="inventors" placeholder="발명자" className="inp" />
+            <input name="date" type="date" className="inp" />
+            <select name="status" className="inp">
+              <option>출원</option><option>등록</option>
+            </select>
+            {projectSelect}
+            <button className="btn justify-center md:col-start-4">특허 추가</button>
+          </form>
+        )}
       </Section>
 
       <Section title={`기술이전 (${transfers.length}건 · 기술료 합계 ${won(transfers.reduce((s, t) => s + t.amount, 0))})`}>

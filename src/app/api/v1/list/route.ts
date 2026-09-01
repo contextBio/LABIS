@@ -1,6 +1,6 @@
 /** SPA 프론트: 모듈별 목록 — 화면 쪽 페이지들과 같은 질의(queries.ts)를 JSON 으로.
  *
- *   GET /api/v1/list?lab=N&kind=projects|members|leaves|samples|experiments|
+ *   GET /api/v1/list?lab=N&kind=projects|research|members|leaves|samples|experiments|
  *                    instruments|publications|patents|techtransfers|purchases|
  *                    fundincomes|finance
  *
@@ -8,11 +8,12 @@
  * 흘리면 스키마가 곧 API 계약이 되어 버린다.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { apiUser, apiLab, withCors, corsPreflight } from "@/lib/apiGuard";
+import { apiUser, apiLab, apiMenuAllowed, menuForbidden, withCors, corsPreflight } from "@/lib/apiGuard";
+import type { MenuKey } from "@/lib/menus";
 import {
   listLabUsers, listLeaves, listProjects, listSamples, listExperiments,
   listInstruments, listPublications, listPatents, listTechTransfers,
-  listPurchases, listFundIncomes, financeSummary,
+  listPurchases, listFundIncomes, financeSummary, listResearchProjects,
 } from "@/lib/queries";
 
 const KINDS: Record<string, (labId: number) => Promise<unknown>> = {
@@ -28,6 +29,13 @@ const KINDS: Record<string, (labId: number) => Promise<unknown>> = {
       piName: p.piName, startDate: p.startDate, endDate: p.endDate,
       totalBudget: p.totalBudget, spent: p.spent, memberCount: p.memberCount,
       status: p.status,
+    })),
+  research: async (labId) =>
+    (await listResearchProjects(labId)).map((r) => ({
+      id: r.id, code: r.code, title: r.title, goal: r.goal,
+      leader: r.leader?.name ?? null, projectId: r.projectId,
+      projectCode: r.project?.code ?? null,
+      startDate: r.startDate, endDate: r.endDate, status: r.status, memo: r.memo,
     })),
   samples: async (labId) =>
     (await listSamples(labId)).map((s) => ({
@@ -80,6 +88,15 @@ const KINDS: Record<string, (labId: number) => Promise<unknown>> = {
   finance: (labId) => financeSummary(labId),
 };
 
+/** 목록 종류가 어느 메뉴에 속하는지 — 잠긴 메뉴는 데이터도 주지 않는다 */
+const KIND_MENU: Record<string, MenuKey> = {
+  members: "hr", leaves: "hr",
+  projects: "projects", research: "research",
+  samples: "samples", experiments: "experiments", instruments: "instruments",
+  publications: "outcomes", patents: "outcomes", techtransfers: "outcomes",
+  purchases: "purchases", fundincomes: "finance", finance: "finance",
+};
+
 export async function GET(req: NextRequest) {
   const user = await apiUser(req);
   if (user instanceof NextResponse) return user;
@@ -91,6 +108,8 @@ export async function GET(req: NextRequest) {
   if (!fn) {
     return withCors(req, NextResponse.json({ ok: false, error: "unknown_kind" }, { status: 400 }));
   }
+  const menu = KIND_MENU[kind];
+  if (menu && !(await apiMenuAllowed(user, labId, menu, "view"))) return menuForbidden(req);
   return withCors(req, NextResponse.json({ ok: true, kind, rows: await fn(labId) }));
 }
 

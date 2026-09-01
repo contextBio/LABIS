@@ -9,7 +9,7 @@ import {
 // 인원 탭은 계정(로그인)과 결합되어 있어 내보내기 전용이다.
 
 export const TABS = [
-  "인원", "과제", "참여연구원", "마일스톤", "예산집행", "시료", "실험", "장비", "휴가",
+  "인원", "과제", "프로젝트", "참여연구원", "마일스톤", "예산집행", "시료", "실험", "장비", "휴가",
   "논문", "특허", "기술이전", "구매", "연구비수입",
 ] as const;
 export type TabName = (typeof TABS)[number];
@@ -113,6 +113,50 @@ export const SPECS: Record<TabName, EntitySpec> = {
       }
       log.push(`과제: ${up}건 갱신, ${ins}건 추가`);
       if (misses.length) log.push(`⚠ 명부에 없는 연구책임자: ${[...new Set(misses)].join(", ")}`);
+    },
+  },
+
+  프로젝트: {
+    headers: ["프로젝트코드", "프로젝트명", "목표", "책임자", "연계과제번호", "시작일", "종료일", "상태", "비고"],
+    exportRows: async (labId) => {
+      const rs = await prisma.researchProject.findMany({
+        where: { labId },
+        include: { leader: { select: { name: true } }, project: { select: { code: true } } },
+        orderBy: { id: "asc" },
+      });
+      return rs.map((r) => [
+        r.code, r.title, r.goal, r.leader?.name ?? "", r.project?.code ?? "",
+        r.startDate, r.endDate, r.status, r.memo,
+      ]);
+    },
+    importRows: async (labId, rows, log) => {
+      const names = await nameMap(labId);
+      const codes = await codeMap(labId);
+      let up = 0, ins = 0;
+      for (const r of rows) {
+        if (!r["프로젝트코드"]) continue;
+        const data = {
+          title: r["프로젝트명"] || r["프로젝트코드"],
+          goal: r["목표"] || "",
+          leaderId: names.get(r["책임자"]) ?? null,
+          projectId: codes.get(r["연계과제번호"]) ?? null,
+          startDate: r["시작일"] || "",
+          endDate: r["종료일"] || "",
+          status: r["상태"] || "진행",
+          memo: r["비고"] || "",
+        };
+        const existing = await prisma.researchProject.findUnique({
+          where: { labId_code: { labId, code: r["프로젝트코드"] } },
+        });
+        if (existing) {
+          await prisma.researchProject.update({ where: { id: existing.id }, data });
+          up++;
+        } else {
+          await prisma.researchProject.create({ data: { ...data, labId, code: r["프로젝트코드"] } });
+          ins++;
+        }
+      }
+      log.push(`프로젝트: ${up}건 갱신, ${ins}건 추가`);
     },
   },
 
@@ -547,7 +591,7 @@ export const SPECS: Record<TabName, EntitySpec> = {
 
 // 가져오기 순서: 참조 무결성 (과제 → 관계형 → 나머지)
 const IMPORT_ORDER: TabName[] = [
-  "과제", "참여연구원", "마일스톤", "예산집행", "시료", "실험", "장비", "휴가",
+  "과제", "프로젝트", "참여연구원", "마일스톤", "예산집행", "시료", "실험", "장비", "휴가",
   "논문", "특허", "기술이전", "구매", "연구비수입",
 ];
 

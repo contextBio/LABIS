@@ -11,13 +11,14 @@ import { Badge, PageHeader, Section, won } from "@/components/ui";
 export const dynamic = "force-dynamic";
 
 export default async function ProjectDetail({ params }: { params: Promise<{ id: string }> }) {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "projects", "view");
   const { id } = await params;
   const project = await getProject(ctx.labId, Number(id));
   if (!project) notFound();
 
   const users = (await listLabUsers(ctx.labId)).filter((u) => u.workStatus === "재직");
-  const canManage = ctx.role === "PI" || ctx.role === "LAB_MANAGER";
+  const canEdit = ctx.level === "edit";
+  const canManage = canEdit && (ctx.role === "PI" || ctx.role === "LAB_MANAGER");
   const isPI = ctx.role === "PI";
   const pct = project.totalBudget > 0 ? Math.min(100, Math.round((project.spent / project.totalBudget) * 100)) : 0;
 

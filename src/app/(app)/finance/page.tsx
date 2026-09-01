@@ -8,13 +8,14 @@ import { Badge, PageHeader, Section, won } from "@/components/ui";
 export const dynamic = "force-dynamic";
 
 export default async function FinancePage() {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "finance", "view");
   const [summary, incomes, projects] = await Promise.all([
     financeSummary(ctx.labId),
     listFundIncomes(ctx.labId),
     listProjects(ctx.labId),
   ]);
-  const canManage = ctx.role === "PI" || ctx.role === "LAB_MANAGER";
+  const canEdit = ctx.level === "edit";
+  const canManage = canEdit && (ctx.role === "PI" || ctx.role === "LAB_MANAGER");
 
   const totals = summary.rows.reduce(
     (acc, r) => ({

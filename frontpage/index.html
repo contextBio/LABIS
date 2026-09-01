@@ -220,6 +220,7 @@
   /* ── 상태값 (기존 화면과 동일) ── */
   var ST = {
     project: ["계획", "진행", "종료", "중단"],
+    research: ["계획", "진행", "완료", "보류", "중단"],
     milestone: ["예정", "진행", "완료", "지연"],
     leave: ["신청", "승인", "반려"],
     purchase: ["신청", "발주", "입고", "취소"],
@@ -254,6 +255,15 @@
     });
   }
   var TOKEN = "", ME = null, LAB = 0, CACHE = {};
+  /** 현재 화면에서 쓰기가 허용되는가 — route() 가 메뉴 권한을 보고 정한다 */
+  var VIEW_EDIT = true;
+
+  /** 팀관리자가 조정한 이 랩에서의 메뉴 권한 (설정이 없으면 edit) */
+  function mlevel(key) {
+    if (!ME || !key) return "edit";
+    var l = (ME.labs || []).find(function (x) { return x.labId === LAB; });
+    return (l && l.levels && l.levels[key]) || "edit";
+  }
   function rank() {
     if (!ME) return 0;
     var l = (ME.labs || []).find(function (x) { return x.labId === LAB; });
@@ -368,11 +378,13 @@
 
   /* ── 행 단위 조작 셀 ── */
   function statusSel(op, id, cur, opts, kinds) {
+    if (!VIEW_EDIT) return '<span class="badge">' + esc(cur || "-") + "</span>";
     return '<select data-sop="' + op + '" data-id="' + id + '" data-kinds="' + kinds.join(",") + '">' +
       opts.map(function (o) { return '<option' + (o === cur ? " selected" : "") + ">" + esc(o) + "</option>"; }).join("") +
       "</select>";
   }
   function delBtn(op, id, kinds) {
+    if (!VIEW_EDIT) return "";
     return '<button class="btn sm danger" data-del="' + op + '" data-id="' + id +
       '" data-kinds="' + kinds.join(",") + '">삭제</button>';
   }
@@ -452,7 +464,7 @@
     var h = '<h1 class="pg">' + esc(title) + '</h1><p class="desc">' + esc(desc || "") + "</p>" +
       '<div id="err"></div>';
     // 운영자(랩매니저) 이상에게만 — innerHTML 이 박힌 뒤에 채운다
-    if (sheetTabs && sheetTabs.length && rank() >= 2) {
+    if (sheetTabs && sheetTabs.length && rank() >= 2 && VIEW_EDIT) {
       h += '<div id="sheetBox"></div>';
       setTimeout(function () { mountSheets(sheetTabs); }, 0);
     }
@@ -463,7 +475,10 @@
     el.textContent = "불러오지 못했습니다 (" + (e.code || e.message) + ")";
     el.style.display = "block";
   }
-  function addBtn(id, label) { return '<button class="btn solid" id="' + id + '">+ ' + esc(label) + "</button>"; }
+  function addBtn(id, label) {
+    if (!VIEW_EDIT) return "";
+    return '<button class="btn solid" id="' + id + '">+ ' + esc(label) + "</button>";
+  }
 
   var VIEWS = {};
 
@@ -763,6 +778,41 @@
   };
 
   /* ── 구매 ── */
+  /* ── 프로젝트 (연구 프로젝트 — 수주 과제와 별개) ── */
+  VIEWS.research = function (v) {
+    var r2 = rank() >= 2, K = ["research"];
+    v.innerHTML = head("프로젝트", "연구 프로젝트 — 수주 과제와 별개인 랩 내부 연구 단위",
+      r2 ? addBtn("addRp", "프로젝트 등록") : "", ["프로젝트"]) + "<div id=t></div>";
+    if ($("addRp")) $("addRp").onclick = function () {
+      openForm("프로젝트 등록", [
+        { k: "code", label: "프로젝트 코드", req: true },
+        { k: "title", label: "프로젝트명", req: true },
+        { k: "goal", label: "목표 · 한 줄 요약" },
+        { k: "leader_id", label: "책임자", type: "select", opts: function () { return userOpts("— 책임자 선택 —"); } },
+        { k: "project_id", label: "연계 과제", type: "select", opts: projectOpts },
+        { k: "start_date", label: "시작일", type: "date" },
+        { k: "end_date", label: "종료일", type: "date" },
+        { k: "status", label: "상태", type: "select", opts: ST.research, def: "진행" },
+        { k: "memo", label: "비고", type: "textarea" },
+      ], function (d) { return write("research_create", d, K); });
+    };
+    list("research").then(function (rows) {
+      $("t").innerHTML = table([
+        { h: "코드", k: "code", cls: "mono" }, { h: "프로젝트명", k: "title" },
+        { h: "목표", k: "goal", cls: "dim" }, { h: "책임자", k: "leader", cls: "dim" },
+        { h: "연계 과제", cls: "mono", f: function (r) {
+          return r.projectCode
+            ? '<a href="#/projects/' + r.projectId + '">' + esc(r.projectCode) + "</a>" : "-";
+        } },
+        { h: "기간", cls: "mono", f: function (r) {
+          return esc((r.startDate || "-") + (r.endDate ? " ~ " + r.endDate : ""));
+        } },
+        { h: "상태", cls: "act", f: function (r) { return statusSel("research_status", r.id, r.status, ST.research, K); } },
+      ].concat(r2 ? [{ h: "", cls: "act", f: function (r) { return delBtn("research_delete", r.id, K); } }] : []),
+        rows, "등록된 프로젝트가 없습니다");
+    }).catch(showErr);
+  };
+
   VIEWS.purchases = function (v) {
     var r2 = rank() >= 2, K = ["purchases", "finance"];
     v.innerHTML = head("구매", "구매 신청·발주·입고", addBtn("addPr", "구매 신청"), ["구매"]) + "<div id=t></div>";
@@ -880,9 +930,6 @@
   };
 
   /* ── 구글시트 연동 (전용 화면) ── */
-  var SHEET_TABS = ["과제", "참여연구원", "마일스톤", "예산집행", "시료", "실험", "장비",
-                    "휴가", "논문", "특허", "기술이전", "구매", "연구비수입"];
-
   VIEWS.sheets = function (v) {
     if (rank() < 2) {
       v.innerHTML = head("구글시트 연동", "시트 연동 설정은 팀 운영자(연구책임자·랩매니저)만 볼 수 있습니다");
@@ -926,12 +973,47 @@
       "이 연구실에 배정되지 않은 계정은 접근할 수 없습니다.</p>" +
       '<div id="assignBox"></div><h3>배정된 구성원</h3><div id="t1"></div>' +
       '<div id="inviteSec" style="display:none"><h3>대기 중인 초대</h3><div id="t2"></div></div>' +
+      (rank() >= 3 ? '<h2>메뉴 권한 (팀관리자)</h2>' +
+        '<p class="note" style="margin-top:0">구성원별로 메뉴 접근을 조정합니다 — 편집 / 읽기 전용 / 차단. ' +
+        "권한은 <b>좁히기만</b> 합니다: 편집으로 둬도 역할이 모자라면 여전히 막힙니다.</p>" +
+        '<div id="permBox">불러오는 중…</div>' : "") +
       "<h2>학과 관리</h2>" +
       '<p class="note" style="margin-top:0">연구실 개설·폐쇄와 학과관리자 지정은 아직 기존 화면에서 합니다.</p>' +
       '<div class="toolbar"><button class="btn" data-legacy="/admin/labs">학과 관리 열기 ↗</button></div>';
     req("/api/v1/lab/members?lab=" + LAB).then(function (d) { renderTeam(d); }).catch(showErr);
+    if (rank() >= 3) {
+      req("/api/v1/perm?lab=" + LAB)
+        .then(function (d) { renderPerm(d.menus, d.rows); })
+        .catch(function (e) {
+          var b = $("permBox");
+          if (b) b.innerHTML = '<p class="note bad">불러오지 못했습니다 (' + esc(e.code || e.message) + ")</p>";
+        });
+    }
   };
   VIEWS.team = VIEWS.settings;   // 예전 해시(#/team)·재렌더 호출 호환
+
+  var LEVELS = [["edit", "편집"], ["view", "읽기"], ["none", "차단"]];
+
+  function renderPerm(menus, rows) {
+    var box = $("permBox"); if (!box) return;
+    box.innerHTML =
+      '<div class="tblwrap"><table><thead><tr><th>구성원</th>' +
+      menus.map(function (m) { return "<th>" + esc(m.label) + "</th>"; }).join("") +
+      "<th></th></tr></thead><tbody>" +
+      rows.map(function (r) {
+        if (!r.adjustable) {
+          return '<tr><td><b>' + esc(r.name) + "</b><br><span style=\"font-size:11.5px;color:var(--muted)\">" + esc(r.email) + "</span></td>" +
+            '<td class="dim" colspan="' + (menus.length + 1) + '">연구책임자·학과관리자는 조정 대상이 아닙니다 (항상 전체 편집)</td></tr>';
+        }
+        return '<tr data-perm="' + esc(r.userId) + '"><td><b>' + esc(r.name) + "</b><br><span style=\"font-size:11.5px;color:var(--muted)\">" + esc(r.email) + "</span></td>" +
+          menus.map(function (m) {
+            return '<td><select data-menu="' + esc(m.key) + '">' + LEVELS.map(function (l) {
+              return '<option value="' + l[0] + '"' + (r.levels[m.key] === l[0] ? " selected" : "") + ">" + l[1] + "</option>";
+            }).join("") + "</select></td>";
+          }).join("") +
+          '<td class="act"><button class="btn sm solid" data-permsave="' + esc(r.userId) + '">저장</button></td></tr>';
+      }).join("") + "</tbody></table></div>";
+  }
 
   function renderTeam(d) {
     var canAssign = d.myRank >= 2, canManage = d.myRank >= 3;
@@ -1046,6 +1128,28 @@
   $("view").addEventListener("click", function (e) {
     var lg = e.target.closest ? e.target.closest("[data-legacy]") : null;
     if (lg) { e.preventDefault(); openLegacy(lg.getAttribute("data-legacy")); return; }
+    var ps = e.target.closest ? e.target.closest("button[data-permsave]") : null;
+    if (ps) {
+      e.preventDefault();
+      var tr = ps.closest("tr");
+      var levels = {};
+      Array.prototype.slice.call(tr.querySelectorAll("select[data-menu]")).forEach(function (sel2) {
+        levels[sel2.getAttribute("data-menu")] = sel2.value;
+      });
+      ps.disabled = true; ps.textContent = "저장 중…";
+      req("/api/v1/perm?lab=" + LAB, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: ps.getAttribute("data-permsave"), levels: levels }),
+      }).then(function () {
+        // 내 권한이 바뀌었을 수 있으니 me 를 다시 받아 사이드바까지 새로 그린다
+        return req("/api/v1/me").then(function (d2) { ME = d2; CACHE = {}; route(); });
+      }).catch(function (err) {
+        ps.disabled = false; ps.textContent = "저장";
+        alert("실패: " + (err.code || err.message));
+      });
+      return;
+    }
     var ab = e.target.closest ? e.target.closest("button[data-all]") : null;
     if (ab) {
       e.preventDefault();
@@ -1110,18 +1214,20 @@
   });
 
   /* ── 내비게이션·라우터 ── */
+  // h=해시, t=이름, v=뷰, k=메뉴 키(팀관리자 권한 조정 대상), sep=앞에 구분선
   var NAV = [
-    ["#/", "대시보드", "dash"],
-    ["#/projects", "과제", "projects"],
-    ["#/hr", "인사", "hr"],
-    ["#/finance", "연구비", "finance"],
-    ["#/outcomes", "성과", "outcomes"],
-    ["#/purchases", "구매", "purchases"],
-    ["#/lims/instruments", "장비", "instruments"],
-    ["#/lims/samples", "시료 (LIMS)", "samples"],
-    ["#/lims/experiments", "실험 (LIMS)", "experiments"],
-    ["#/sheets", "구글시트 연동", "sheets", true],   // true = 앞에 구분선
-    ["#/settings", "설정", "settings"],
+    { h: "#/", t: "대시보드", v: "dash", k: "dashboard" },
+    { h: "#/projects", t: "과제", v: "projects", k: "projects" },
+    { h: "#/research", t: "프로젝트", v: "research", k: "research" },
+    { h: "#/hr", t: "인사", v: "hr", k: "hr" },
+    { h: "#/finance", t: "연구비", v: "finance", k: "finance" },
+    { h: "#/outcomes", t: "성과", v: "outcomes", k: "outcomes" },
+    { h: "#/purchases", t: "구매", v: "purchases", k: "purchases" },
+    { h: "#/lims/instruments", t: "장비", v: "instruments", k: "instruments" },
+    { h: "#/lims/samples", t: "시료 (LIMS)", v: "samples", k: "samples" },
+    { h: "#/lims/experiments", t: "실험 (LIMS)", v: "experiments", k: "experiments" },
+    { h: "#/sheets", t: "구글시트 연동", v: "sheets", k: "sheets", sep: true },
+    { h: "#/settings", t: "설정", v: "settings" },
   ];
   function labName() {
     var l = (ME.labs || []).find(function (x) { return x.labId === LAB; });
@@ -1130,11 +1236,12 @@
   function renderNav() {
     var cur = location.hash || "#/";
     $("sideNav").innerHTML =
-      NAV.map(function (n2) {
-        var on = cur === n2[0] || (n2[0] !== "#/" && cur.indexOf(n2[0]) === 0);
-        return (n2[3] ? '<div class="sep"></div>' : "") +
-          '<a href="' + n2[0] + '"' + (on ? ' class="on"' : "") + ">" + esc(n2[1]) + "</a>";
-      }).join("");
+      NAV.filter(function (n2) { return mlevel(n2.k) !== "none"; })   // 팀관리자가 잠근 메뉴는 감춘다
+        .map(function (n2) {
+          var on = cur === n2.h || (n2.h !== "#/" && cur.indexOf(n2.h) === 0);
+          return (n2.sep ? '<div class="sep"></div>' : "") +
+            '<a href="' + n2.h + '"' + (on ? ' class="on"' : "") + ">" + esc(n2.t) + "</a>";
+        }).join("");
   }
   function route() {
     if (!ME) return;
@@ -1144,9 +1251,12 @@
     if (h === "#/sync") { location.hash = "#/sheets"; return; }
     var v = $("view");
     var m = /^#\/projects\/(\d+)$/.exec(h);
+    var entry = NAV.find(function (n2) { return n2.h === (m ? "#/projects" : h); }) || NAV[0];
+    // 잠긴 메뉴는 주소로 들어와도 홈으로 (서버 가드가 데이터도 막는다)
+    if (mlevel(entry.k) === "none") { location.hash = "#/"; return; }
+    VIEW_EDIT = mlevel(entry.k) === "edit";
     if (m) return VIEWS.projectDetail(v, Number(m[1]));
-    var entry = NAV.find(function (n2) { return n2[0] === h; });
-    (VIEWS[(entry || NAV[0])[2]])(v);
+    (VIEWS[entry.v])(v);
   }
   window.addEventListener("hashchange", route);
   $("dashLab").addEventListener("change", function () {

@@ -8,7 +8,7 @@ import { PageHeader, Section } from "@/components/ui";
 export const dynamic = "force-dynamic";
 
 export default async function SyncPage() {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "sheets", "edit");
   const spreadsheetId = await getLabSetting(ctx.labId, "spreadsheet_id");
   const sa = loadServiceAccount();
   let log: { at: string; lines: string[] } | null = null;

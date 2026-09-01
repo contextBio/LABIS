@@ -32,7 +32,7 @@ async function assertLabUser(labId: number, userId: string | null) {
 // ---------- 인사관리 ----------
 
 export async function updateProfile(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "hr", "edit");
   const userId = s(fd, "user_id");
   if (!(await assertLabUser(ctx.labId, userId))) return;
   await prisma.user.update({
@@ -49,7 +49,7 @@ export async function updateProfile(fd: FormData) {
 }
 
 export async function createLeave(fd: FormData) {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "hr", "edit");
   // 일반 구성원은 본인 휴가만 신청, 매니저 이상은 대리 신청 가능
   let userId = s(fd, "user_id") || ctx.user.id;
   if (ctx.role === "MEMBER") userId = ctx.user.id;
@@ -69,7 +69,7 @@ export async function createLeave(fd: FormData) {
 }
 
 export async function setLeaveStatus(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "hr", "edit");
   const id = n(fd, "id");
   const status = s(fd, "status");
   await prisma.leave.updateMany({ where: { id, labId: ctx.labId }, data: { status } });
@@ -80,7 +80,7 @@ export async function setLeaveStatus(fd: FormData) {
 // ---------- 과제관리 ----------
 
 export async function createProject(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "projects", "edit");
   const piId = await assertLabUser(ctx.labId, sid(fd, "pi_id"));
   const project = await prisma.project.create({
     data: {
@@ -105,7 +105,7 @@ export async function createProject(fd: FormData) {
 }
 
 export async function updateProjectStatus(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "projects", "edit");
   const id = n(fd, "id");
   const status = s(fd, "status");
   await prisma.project.updateMany({ where: { id, labId: ctx.labId }, data: { status } });
@@ -115,7 +115,7 @@ export async function updateProjectStatus(fd: FormData) {
 }
 
 export async function deleteProject(fd: FormData) {
-  const ctx = await requireLab("PI");
+  const ctx = await requireLab("PI", "projects", "edit");
   const id = n(fd, "id");
   await prisma.project.deleteMany({ where: { id, labId: ctx.labId } });
   await audit(ctx.user.id, ctx.labId, "project.delete", "project", id);
@@ -129,7 +129,7 @@ async function assertLabProject(labId: number, projectId: number) {
 }
 
 export async function addProjectMember(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "projects", "edit");
   const projectId = await assertLabProject(ctx.labId, n(fd, "project_id"));
   const userId = await assertLabUser(ctx.labId, sid(fd, "user_id"));
   if (!projectId || !userId) return;
@@ -147,14 +147,14 @@ export async function addProjectMember(fd: FormData) {
 }
 
 export async function removeProjectMember(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "projects", "edit");
   const id = n(fd, "id");
   await prisma.projectMember.deleteMany({ where: { id, project: { labId: ctx.labId } } });
   revalidatePath(`/projects/${n(fd, "project_id")}`);
 }
 
 export async function addMilestone(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "projects", "edit");
   const projectId = await assertLabProject(ctx.labId, n(fd, "project_id"));
   if (!projectId) return;
   await prisma.milestone.create({
@@ -170,7 +170,7 @@ export async function addMilestone(fd: FormData) {
 }
 
 export async function setMilestoneStatus(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "projects", "edit");
   await prisma.milestone.updateMany({
     where: { id: n(fd, "id"), project: { labId: ctx.labId } },
     data: { status: s(fd, "status") },
@@ -179,7 +179,7 @@ export async function setMilestoneStatus(fd: FormData) {
 }
 
 export async function deleteMilestone(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "projects", "edit");
   await prisma.milestone.deleteMany({
     where: { id: n(fd, "id"), project: { labId: ctx.labId } },
   });
@@ -187,7 +187,7 @@ export async function deleteMilestone(fd: FormData) {
 }
 
 export async function addBudgetItem(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "projects", "edit");
   const projectId = await assertLabProject(ctx.labId, n(fd, "project_id"));
   if (!projectId) return;
   const item = await prisma.budgetItem.create({
@@ -207,7 +207,7 @@ export async function addBudgetItem(fd: FormData) {
 }
 
 export async function deleteBudgetItem(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "projects", "edit");
   const id = n(fd, "id");
   await prisma.budgetItem.deleteMany({ where: { id, project: { labId: ctx.labId } } });
   await audit(ctx.user.id, ctx.labId, "budget.delete", "budget_item", id);
@@ -217,7 +217,7 @@ export async function deleteBudgetItem(fd: FormData) {
 // ---------- 성과 (논문 · 특허 · 기술이전) ----------
 
 export async function createPublication(fd: FormData) {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "outcomes", "edit");
   await prisma.publication.create({
     data: {
       labId: ctx.labId,
@@ -234,13 +234,13 @@ export async function createPublication(fd: FormData) {
 }
 
 export async function deletePublication(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "outcomes", "edit");
   await prisma.publication.deleteMany({ where: { id: n(fd, "id"), labId: ctx.labId } });
   revalidatePath("/outcomes");
 }
 
 export async function createPatent(fd: FormData) {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "outcomes", "edit");
   await prisma.patent.create({
     data: {
       labId: ctx.labId,
@@ -258,7 +258,7 @@ export async function createPatent(fd: FormData) {
 }
 
 export async function setPatentStatus(fd: FormData) {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "outcomes", "edit");
   await prisma.patent.updateMany({
     where: { id: n(fd, "id"), labId: ctx.labId },
     data: { status: s(fd, "status") },
@@ -267,13 +267,13 @@ export async function setPatentStatus(fd: FormData) {
 }
 
 export async function deletePatent(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "outcomes", "edit");
   await prisma.patent.deleteMany({ where: { id: n(fd, "id"), labId: ctx.labId } });
   revalidatePath("/outcomes");
 }
 
 export async function createTechTransfer(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "outcomes", "edit");
   await prisma.techTransfer.create({
     data: {
       labId: ctx.labId,
@@ -289,15 +289,51 @@ export async function createTechTransfer(fd: FormData) {
 }
 
 export async function deleteTechTransfer(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "outcomes", "edit");
   await prisma.techTransfer.deleteMany({ where: { id: n(fd, "id"), labId: ctx.labId } });
   revalidatePath("/outcomes");
 }
 
 // ---------- 구매 ----------
 
+/* ── 연구 프로젝트 ── */
+
+export async function createResearchProject(fd: FormData) {
+  const ctx = await requireLab("LAB_MANAGER", "research", "edit");
+  await prisma.researchProject.create({
+    data: {
+      labId: ctx.labId,
+      code: s(fd, "code"),
+      title: s(fd, "title"),
+      goal: s(fd, "goal"),
+      leaderId: await assertLabUser(ctx.labId, sid(fd, "leader_id")),
+      projectId: await assertLabProject(ctx.labId, n(fd, "project_id")).then((v) => v ?? null),
+      startDate: s(fd, "start_date"),
+      endDate: s(fd, "end_date"),
+      status: s(fd, "status") || "진행",
+      memo: s(fd, "memo"),
+    },
+  });
+  revalidatePath("/research");
+}
+
+export async function setResearchProjectStatus(fd: FormData) {
+  const ctx = await requireLab("MEMBER", "research", "edit");
+  await prisma.researchProject.updateMany({
+    where: { id: n(fd, "id"), labId: ctx.labId },
+    data: { status: s(fd, "status") },
+  });
+  revalidatePath("/research");
+}
+
+export async function deleteResearchProject(fd: FormData) {
+  const ctx = await requireLab("LAB_MANAGER", "research", "edit");
+  await prisma.researchProject.deleteMany({ where: { id: n(fd, "id"), labId: ctx.labId } });
+  revalidatePath("/research");
+}
+
 export async function createPurchase(fd: FormData) {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "purchases", "edit");
   await prisma.purchase.create({
     data: {
       labId: ctx.labId,
@@ -316,7 +352,7 @@ export async function createPurchase(fd: FormData) {
 }
 
 export async function setPurchaseStatus(fd: FormData) {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "purchases", "edit");
   await prisma.purchase.updateMany({
     where: { id: n(fd, "id"), labId: ctx.labId },
     data: { status: s(fd, "status") },
@@ -325,7 +361,7 @@ export async function setPurchaseStatus(fd: FormData) {
 }
 
 export async function deletePurchase(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "purchases", "edit");
   await prisma.purchase.deleteMany({ where: { id: n(fd, "id"), labId: ctx.labId } });
   revalidatePath("/purchases");
 }
@@ -333,7 +369,7 @@ export async function deletePurchase(fd: FormData) {
 // ---------- 연구비 수입 ----------
 
 export async function createFundIncome(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "finance", "edit");
   const income = await prisma.fundIncome.create({
     data: {
       labId: ctx.labId,
@@ -350,7 +386,7 @@ export async function createFundIncome(fd: FormData) {
 }
 
 export async function deleteFundIncome(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "finance", "edit");
   const id = n(fd, "id");
   await prisma.fundIncome.deleteMany({ where: { id, labId: ctx.labId } });
   await audit(ctx.user.id, ctx.labId, "fund.income_delete", "fund_income", id);
@@ -360,7 +396,7 @@ export async function deleteFundIncome(fd: FormData) {
 // ---------- LIMS ----------
 
 export async function createSample(fd: FormData) {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "samples", "edit");
   await prisma.sample.create({
     data: {
       labId: ctx.labId,
@@ -380,7 +416,7 @@ export async function createSample(fd: FormData) {
 }
 
 export async function setSampleStatus(fd: FormData) {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "samples", "edit");
   await prisma.sample.updateMany({
     where: { id: n(fd, "id"), labId: ctx.labId },
     data: { status: s(fd, "status") },
@@ -389,13 +425,13 @@ export async function setSampleStatus(fd: FormData) {
 }
 
 export async function deleteSample(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "samples", "edit");
   await prisma.sample.deleteMany({ where: { id: n(fd, "id"), labId: ctx.labId } });
   revalidatePath("/lims/samples");
 }
 
 export async function createExperiment(fd: FormData) {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "experiments", "edit");
   const sampleId = nid(fd, "sample_id");
   const validSample = sampleId
     ? await prisma.sample.findFirst({ where: { id: sampleId, labId: ctx.labId } })
@@ -418,7 +454,7 @@ export async function createExperiment(fd: FormData) {
 }
 
 export async function setExperimentStatus(fd: FormData) {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "experiments", "edit");
   const id = n(fd, "id");
   const status = s(fd, "status");
   const exp = await prisma.experiment.findFirst({ where: { id, labId: ctx.labId } });
@@ -431,13 +467,13 @@ export async function setExperimentStatus(fd: FormData) {
 }
 
 export async function deleteExperiment(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "experiments", "edit");
   await prisma.experiment.deleteMany({ where: { id: n(fd, "id"), labId: ctx.labId } });
   revalidatePath("/lims/experiments");
 }
 
 export async function createInstrument(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "instruments", "edit");
   await prisma.instrument.create({
     data: {
       labId: ctx.labId,
@@ -457,7 +493,7 @@ export async function createInstrument(fd: FormData) {
 }
 
 export async function setInstrumentStatus(fd: FormData) {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "instruments", "edit");
   await prisma.instrument.updateMany({
     where: { id: n(fd, "id"), labId: ctx.labId },
     data: { status: s(fd, "status") },
@@ -466,7 +502,7 @@ export async function setInstrumentStatus(fd: FormData) {
 }
 
 export async function markInstrumentChecked(fd: FormData) {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "instruments", "edit");
   const next = new Date();
   next.setMonth(next.getMonth() + 6);
   await prisma.instrument.updateMany({
@@ -481,7 +517,7 @@ export async function markInstrumentChecked(fd: FormData) {
 }
 
 export async function deleteInstrument(fd: FormData) {
-  const ctx = await requireLab("LAB_MANAGER");
+  const ctx = await requireLab("LAB_MANAGER", "instruments", "edit");
   await prisma.instrument.deleteMany({ where: { id: n(fd, "id"), labId: ctx.labId } });
   revalidatePath("/lims/instruments");
 }

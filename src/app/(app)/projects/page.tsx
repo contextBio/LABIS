@@ -8,10 +8,11 @@ import { Badge, PageHeader, Section, won } from "@/components/ui";
 export const dynamic = "force-dynamic";
 
 export default async function ProjectsPage() {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "projects", "view");
   const projects = await listProjects(ctx.labId);
   const users = (await listLabUsers(ctx.labId)).filter((u) => u.workStatus === "재직");
-  const canManage = ctx.role === "PI" || ctx.role === "LAB_MANAGER";
+  const canEdit = ctx.level === "edit";
+  const canManage = canEdit && (ctx.role === "PI" || ctx.role === "LAB_MANAGER");
 
   return (
     <div>

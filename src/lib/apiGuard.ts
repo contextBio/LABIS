@@ -11,6 +11,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyContextBioTokenCached, mayUseLabis } from "./contextbio";
 import { prisma } from "./prisma";
+import { menuLevels, atLeast, type MenuLevel } from "./perm";
+import type { MenuKey } from "./menus";
 import type { LabRole } from "@prisma/client";
 
 const ALLOWED_ORIGINS = new Set([
@@ -94,4 +96,21 @@ export function apiRank(user: ApiUser, labId: number): number {
   if (user.isDeptAdmin) return 4;
   const m = user.memberships.find((x) => x.labId === labId);
   return m ? RANK[m.role] : 0;
+}
+
+/** 팀관리자가 조정한 메뉴별 권한 — 화면 가드(requireLab)와 같은 규칙. */
+export async function apiMenuAllowed(
+  user: ApiUser,
+  labId: number,
+  menu: MenuKey,
+  need: MenuLevel
+): Promise<boolean> {
+  const m = user.memberships.find((x) => x.labId === labId);
+  const role: LabRole = m?.role ?? "PI"; // 학과관리자는 소속이 없어도 PI 로 취급
+  const levels = await menuLevels(labId, user.id, role, user.isDeptAdmin);
+  return atLeast(levels[menu], need);
+}
+
+export function menuForbidden(req: NextRequest): NextResponse {
+  return fail(req, 403, "menu_forbidden");
 }

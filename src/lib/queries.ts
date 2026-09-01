@@ -150,6 +150,18 @@ export async function listPurchases(labId: number) {
   });
 }
 
+/** 연구 프로젝트 — 수주 과제와 별개인 랩 내부 연구 단위 */
+export async function listResearchProjects(labId: number) {
+  return prisma.researchProject.findMany({
+    where: { labId },
+    include: {
+      leader: { select: { name: true } },
+      project: { select: { code: true, title: true } },
+    },
+    orderBy: [{ status: "asc" }, { startDate: "desc" }, { id: "desc" }],
+  });
+}
+
 export async function listFundIncomes(labId: number) {
   return prisma.fundIncome.findMany({
     where: { labId },
