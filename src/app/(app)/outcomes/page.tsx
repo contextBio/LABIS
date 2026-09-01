@@ -5,6 +5,7 @@ import {
   createPublication, deletePublication, createPatent, setPatentStatus, deletePatent,
   createTechTransfer, deleteTechTransfer,
 } from "@/lib/actions";
+import { SheetSources } from "@/components/SheetSources";
 import { Badge, PageHeader, Section, won } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +32,10 @@ export default async function OutcomesPage() {
   return (
     <div>
       <PageHeader title={`성과 관리 — ${ctx.labName}`} desc="논문 · 특허 · 기술이전" />
+
+      {canManage && (
+        <SheetSources labId={ctx.labId} tabs={["논문", "특허", "기술이전"]} from="/outcomes" />
+      )}
 
       <Section title={`논문 (${pubs.length}편)`}>
         <table className="tbl mb-4">

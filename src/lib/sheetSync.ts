@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
 import {
-  loadServiceAccount, readTab, readPublicTab, writeTab, getLabSetting,
+  loadServiceAccount, getLabSetting, parseSheetRef, readSheetRows, writeSheetRows,
+  type SheetRef,
 } from "./google";
 
 // 시트 탭 구성 (랩 단위 동기화)
@@ -550,6 +551,51 @@ const IMPORT_ORDER: TabName[] = [
   "논문", "특허", "기술이전", "구매", "연구비수입",
 ];
 
+/** 항목별 시트 주소를 붙일 수 있는 항목 (인원은 계정과 결합되어 내보내기 전용) */
+export const ITEM_TABS: readonly TabName[] = IMPORT_ORDER;
+
+export const itemSrcKey = (tab: TabName) => `sheet_src_${tab}`;
+export const itemLogKey = (tab: TabName) => `sheet_log_${tab}`;
+
+/** 항목에 지정된 시트 주소 (원문 그대로 — 사용자가 붙여넣은 URL) */
+export async function getItemSheetUrl(labId: number, tab: TabName): Promise<string> {
+  return getLabSetting(labId, itemSrcKey(tab));
+}
+
+async function itemRef(labId: number, tab: TabName): Promise<SheetRef | null> {
+  const ref = parseSheetRef(await getLabSetting(labId, itemSrcKey(tab)));
+  return ref.id ? ref : null;
+}
+
+/** 항목 전용 시트가 있으면 그것을, 없으면 랩 통합 스프레드시트를 쓴다. */
+async function resolveRef(labId: number, tab: TabName): Promise<SheetRef | null> {
+  const own = await itemRef(labId, tab);
+  if (own) return own;
+  const shared = await getLabSetting(labId, "spreadsheet_id");
+  return shared ? { id: shared, gid: null } : null;
+}
+
+/** 항목 하나를 시트에서 읽어 DB에 반영한다. */
+export async function importTab(labId: number, tab: TabName): Promise<string[]> {
+  const spec = SPECS[tab];
+  const log: string[] = [];
+  if (!spec.importRows) {
+    log.push(`${tab}: 계정과 결합된 내보내기 전용 항목입니다 — 건너뜀`);
+    return log;
+  }
+  const ref = await resolveRef(labId, tab);
+  if (!ref) throw new Error(`${tab}: 시트 주소가 설정되지 않았습니다.`);
+  const sa = loadServiceAccount();
+  const { rows, sheetTitle } = await readSheetRows(sa, ref, tab);
+  if (rows.length < 2) {
+    log.push(`${tab}: '${sheetTitle}' 시트에 데이터가 없습니다 (건너뜀)`);
+    return log;
+  }
+  log.push(`${tab}: '${sheetTitle}' 시트에서 ${rows.length - 1}행 읽음`);
+  await spec.importRows(labId, toObjects(rows), log);
+  return log;
+}
+
 export async function exportAll(labId: number): Promise<string[]> {
   const sa = loadServiceAccount();
   if (!sa) {
@@ -557,42 +603,44 @@ export async function exportAll(labId: number): Promise<string[]> {
       "내보내기는 서비스 계정이 필요합니다. data/service-account.json 파일을 두거나 GOOGLE_SERVICE_ACCOUNT_FILE 환경변수를 설정하세요."
     );
   }
-  const spreadsheetId = await getLabSetting(labId, "spreadsheet_id");
-  if (!spreadsheetId) throw new Error("이 랩의 스프레드시트가 설정되지 않았습니다.");
   const log: string[] = [];
   for (const tab of TABS) {
+    const ref = await resolveRef(labId, tab);
+    if (!ref) {
+      log.push(`${tab}: 시트 주소 없음 (건너뜀)`);
+      continue;
+    }
     const spec = SPECS[tab];
     const rows = [spec.headers, ...(await spec.exportRows(labId))];
-    await writeTab(sa, spreadsheetId, tab, rows);
-    log.push(`${tab}: ${rows.length - 1}건 내보냄`);
+    try {
+      const title = await writeSheetRows(sa, ref, tab, rows);
+      log.push(`${tab}: ${rows.length - 1}건 → '${title}'`);
+    } catch (e) {
+      log.push(`❌ ${tab}: 내보내기 실패 — ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  if (log.every((l) => l.endsWith("(건너뜀)"))) {
+    throw new Error("연결된 시트가 없습니다. 항목별 시트 주소를 먼저 등록하세요.");
   }
   return log;
 }
 
 export async function importAll(labId: number, tabs?: TabName[]): Promise<string[]> {
-  const spreadsheetId = await getLabSetting(labId, "spreadsheet_id");
-  if (!spreadsheetId) throw new Error("이 랩의 스프레드시트가 설정되지 않았습니다.");
-  const sa = loadServiceAccount();
   const targets = IMPORT_ORDER.filter((t) => !tabs || tabs.includes(t));
   const log: string[] = [];
-  if (!sa) log.push("서비스 계정 없음 — 공개 시트 CSV 모드로 읽습니다.");
-  if (tabs?.includes("인원")) log.push("인원: 내보내기 전용 탭입니다 (계정과 결합) — 건너뜀");
+  if (!loadServiceAccount()) log.push("서비스 계정 없음 — 공개 시트 CSV 모드로 읽습니다.");
+  if (tabs?.includes("인원")) log.push("인원: 내보내기 전용 항목입니다 (계정과 결합) — 건너뜀");
 
+  let touched = 0;
   for (const tab of targets) {
-    const spec = SPECS[tab];
-    if (!spec.importRows) continue;
-    let rows: string[][];
     try {
-      rows = sa ? await readTab(sa, spreadsheetId, tab) : await readPublicTab(spreadsheetId, tab);
+      const lines = await importTab(labId, tab);
+      log.push(...lines);
+      touched++;
     } catch (e) {
-      log.push(`${tab}: 읽기 실패 — ${e instanceof Error ? e.message : String(e)}`);
-      continue;
+      log.push(`${tab}: ${e instanceof Error ? e.message : String(e)}`);
     }
-    if (rows.length < 2) {
-      log.push(`${tab}: 데이터 없음 (건너뜀)`);
-      continue;
-    }
-    await spec.importRows(labId, toObjects(rows), log);
   }
+  if (touched === 0) throw new Error("가져올 수 있는 시트가 없습니다. 항목별 시트 주소를 먼저 등록하세요.");
   return log;
 }

@@ -6,16 +6,9 @@
  * 외부 id 주입은 assertLabUser/assertLabProject 로 막는다 — actions.ts 와 동일.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { apiUser, apiLab, withCors, corsPreflight, type ApiUser } from "@/lib/apiGuard";
+import { apiUser, apiLab, apiRank, withCors, corsPreflight, type ApiUser } from "@/lib/apiGuard";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/guard";
-
-const RANK: Record<string, number> = { MEMBER: 1, LAB_MANAGER: 2, PI: 3 };
-function myRank(user: ApiUser, labId: number): number {
-  if (user.isDeptAdmin) return 4;
-  const m = user.memberships.find((x) => x.labId === labId);
-  return m ? RANK[m.role] : 0;
-}
 
 type D = Record<string, unknown>;
 const s = (d: D, k: string) => String(d[k] ?? "").trim();
@@ -282,7 +275,7 @@ export async function POST(req: NextRequest) {
   const op = OPS[String(body.op ?? "")];
   if (!op) return withCors(req, NextResponse.json({ ok: false, error: "unknown_op" }, { status: 400 }));
 
-  const rank = myRank(user, labId);
+  const rank = apiRank(user, labId);
   if (rank < op.min) {
     return withCors(req, NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }));
   }

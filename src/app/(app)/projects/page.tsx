@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireLab } from "@/lib/guard";
 import { listProjects, listLabUsers } from "@/lib/queries";
 import { createProject } from "@/lib/actions";
+import { SheetSources } from "@/components/SheetSources";
 import { Badge, PageHeader, Section, won } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,10 @@ export default async function ProjectsPage() {
   return (
     <div>
       <PageHeader title={`과제관리 — ${ctx.labName}`} desc="연구과제 · 참여연구원 · 마일스톤 · 예산" />
+
+      {canManage && (
+        <SheetSources labId={ctx.labId} tabs={["과제", "참여연구원", "마일스톤", "예산집행"]} from="/projects" />
+      )}
 
       <Section title={`과제 목록 (${projects.length}건)`}>
         <table className="tbl">

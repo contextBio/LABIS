@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireLab } from "@/lib/guard";
 import { listExperiments, listProjects, listSamples, listLabUsers } from "@/lib/queries";
 import { createExperiment, setExperimentStatus, deleteExperiment } from "@/lib/actions";
+import { SheetSources } from "@/components/SheetSources";
 import { Badge, PageHeader, Section } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,10 @@ export default async function ExperimentsPage() {
   return (
     <div>
       <PageHeader title={`실험 관리 (LIMS) — ${ctx.labName}`} desc="실험 기록 · 진행 상태 · 결과 요약" />
+
+      {canDelete && (
+        <SheetSources labId={ctx.labId} tabs={["실험"]} from="/lims/experiments" />
+      )}
 
       <Section title={`실험 목록 (${experiments.length}건)`}>
         <div className="overflow-x-auto">

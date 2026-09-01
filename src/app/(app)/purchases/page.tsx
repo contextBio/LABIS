@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireLab } from "@/lib/guard";
 import { listPurchases, listProjects, listLabUsers } from "@/lib/queries";
 import { createPurchase, setPurchaseStatus, deletePurchase } from "@/lib/actions";
+import { SheetSources } from "@/components/SheetSources";
 import { Badge, PageHeader, Section, won } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,10 @@ export default async function PurchasesPage() {
   return (
     <div>
       <PageHeader title={`구매 관리 — ${ctx.labName}`} desc={`시약·재료·비품 구매 (누계 ${won(total)})`} />
+
+      {canManage && (
+        <SheetSources labId={ctx.labId} tabs={["구매"]} from="/purchases" />
+      )}
 
       <Section title={`구매 내역 (${purchases.length}건)`}>
         <table className="tbl">

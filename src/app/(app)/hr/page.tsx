@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireLab } from "@/lib/guard";
 import { listLabUsers, listLeaves } from "@/lib/queries";
 import { updateProfile, createLeave, setLeaveStatus } from "@/lib/actions";
+import { SheetSources } from "@/components/SheetSources";
 import { Badge, PageHeader, Section } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +23,10 @@ export default async function HrPage() {
   return (
     <div>
       <PageHeader title={`인사관리 — ${ctx.labName}`} desc="구성원 명부 · 과제 참여율 · 휴가" />
+
+      {canManage && (
+        <SheetSources labId={ctx.labId} tabs={["휴가"]} from="/hr" />
+      )}
 
       <Section
         title={`구성원 명부 (${users.length}명)`}

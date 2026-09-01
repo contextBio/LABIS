@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireLab } from "@/lib/guard";
 import { listSamples, listProjects, listLabUsers } from "@/lib/queries";
 import { createSample, setSampleStatus, deleteSample } from "@/lib/actions";
+import { SheetSources } from "@/components/SheetSources";
 import { Badge, PageHeader, Section } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,10 @@ export default async function SamplesPage() {
   return (
     <div>
       <PageHeader title={`시료 관리 (LIMS) — ${ctx.labName}`} desc="시료 등록 · 보관 위치 · 상태 추적" />
+
+      {canDelete && (
+        <SheetSources labId={ctx.labId} tabs={["시료"]} from="/lims/samples" />
+      )}
 
       <Section title={`시료 목록 (${samples.length}건)`}>
         <div className="overflow-x-auto">

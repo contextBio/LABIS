@@ -1,6 +1,7 @@
 import { requireLab } from "@/lib/guard";
 import { listInstruments, listLabUsers } from "@/lib/queries";
 import { createInstrument, setInstrumentStatus, markInstrumentChecked, deleteInstrument } from "@/lib/actions";
+import { SheetSources } from "@/components/SheetSources";
 import { Badge, PageHeader, Section } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,10 @@ export default async function InstrumentsPage() {
   return (
     <div>
       <PageHeader title={`장비 관리 (LIMS) — ${ctx.labName}`} desc="장비 현황 · 점검 일정 · 관리자" />
+
+      {canManage && (
+        <SheetSources labId={ctx.labId} tabs={["장비"]} from="/lims/instruments" />
+      )}
 
       <Section title={`장비 목록 (${instruments.length}대)`}>
         <div className="overflow-x-auto">

@@ -86,3 +86,12 @@ export function apiLab(req: NextRequest, user: ApiUser): number | NextResponse {
   if (!allowed) return fail(req, 403, "lab_forbidden");
   return labId;
 }
+
+const RANK: Record<LabRole, number> = { MEMBER: 1, LAB_MANAGER: 2, PI: 3 };
+
+/** 랩 안에서의 권한 등급 — 1=팀원, 2=운영자(랩매니저), 3=연구책임자, 4=학과관리자. */
+export function apiRank(user: ApiUser, labId: number): number {
+  if (user.isDeptAdmin) return 4;
+  const m = user.memberships.find((x) => x.labId === labId);
+  return m ? RANK[m.role] : 0;
+}
