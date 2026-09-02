@@ -1,7 +1,7 @@
 import { requireLab } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import {
-  createLab, setLabStatus, deleteLab,
+  createLab, setLabStatus,
   inviteMember, cancelInvite, changeMemberRole, removeMember,
 } from "@/lib/orgActions";
 import { saveMenuPermissions } from "@/lib/permActions";
@@ -55,7 +55,7 @@ export default async function AdminSettingsPage() {
         <Section title={`연구실 (${labs.length}개)`}>
           <table className="tbl mb-4">
             <thead>
-              <tr><th>연구실명</th><th>PI</th><th>호실</th><th>구성원</th><th>상태</th><th></th></tr>
+              <tr><th>연구실명</th><th>PI</th><th>호실</th><th>구성원</th><th>상태</th></tr>
             </thead>
             <tbody>
               {labs.map((l) => (
@@ -72,16 +72,12 @@ export default async function AdminSettingsPage() {
                         <option>운영</option><option>휴면</option><option>폐쇄</option>
                       </select>
                       <button className="btn-ghost">변경</button>
-                    </form>{" "}
-                    <form action={deleteLab} className="inline">
-                      <input type="hidden" name="id" value={l.id} />
-                      <button className="btn-danger">삭제</button>
                     </form>
                   </td>
                 </tr>
               ))}
               {labs.length === 0 && (
-                <tr><td colSpan={6} className="py-6 text-center text-slate-400">등록된 연구실이 없습니다 — 아래에서 첫 연구실을 만드세요</td></tr>
+                <tr><td colSpan={5} className="py-6 text-center text-slate-400">등록된 연구실이 없습니다 — 아래에서 첫 연구실을 만드세요</td></tr>
               )}
             </tbody>
           </table>
@@ -92,7 +88,8 @@ export default async function AdminSettingsPage() {
             <button className="btn justify-center">연구실 추가</button>
           </form>
           <p className="mt-2 text-xs text-slate-400">
-            연구실 추가·삭제는 학과관리자만 할 수 있습니다. 삭제하면 그 연구실의 자료가 함께 지워집니다.
+            연구실 추가와 상태 변경은 학과관리자만 할 수 있습니다. 쓰지 않는 연구실은
+            <b> 폐쇄</b>로 바꾸세요 — 자료는 그대로 남습니다 (삭제 기능은 두지 않습니다).
           </p>
         </Section>
       )}

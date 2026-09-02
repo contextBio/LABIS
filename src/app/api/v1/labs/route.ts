@@ -3,7 +3,8 @@
  *   GET  /api/v1/labs                                → 연구실 목록 (구성원 수 포함)
  *   POST /api/v1/labs  {action:"create", name, piName, room}
  *   POST /api/v1/labs  {action:"status", id, status}
- *   POST /api/v1/labs  {action:"delete", id}
+ *
+ * 연구실 삭제는 두지 않는다 — 쓰지 않는 연구실은 status="폐쇄"로 남긴다.
  *
  * 공개 목록(/api/labs, 이름·id 만)과 달리 이쪽은 인증이 필요하다.
  */
@@ -62,10 +63,6 @@ export async function POST(req: NextRequest) {
     if (!STATUSES.has(status)) return fail("bad_status");
     await prisma.lab.update({ where: { id: Number(body.id) }, data: { status } });
     await audit(user.id, Number(body.id), "lab.status", "lab", Number(body.id), { status });
-  } else if (body.action === "delete") {
-    const id = Number(body.id);
-    await audit(user.id, null, "lab.delete", "lab", id);
-    await prisma.lab.delete({ where: { id } });
   } else {
     return fail("unknown_action");
   }

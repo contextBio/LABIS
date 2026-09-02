@@ -37,15 +37,6 @@ export async function setLabStatus(fd: FormData) {
   revalidatePath("/admin/settings");
 }
 
-export async function deleteLab(fd: FormData) {
-  const admin = await requireDeptAdmin();
-  const id = Number(fd.get("id"));
-  await prisma.lab.delete({ where: { id } });
-  await audit(admin.id, null, "lab.delete", "lab", id);
-  revalidatePath("/admin/labs");
-  revalidatePath("/admin/settings");
-}
-
 /** c1 리눅스 계정명 연결 — MUSE 공동 로그인(SSO·PAM)이 이 사용자로 매핑된다 */
 export async function setUsername(fd: FormData) {
   const admin = await requireDeptAdmin();

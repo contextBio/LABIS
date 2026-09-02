@@ -972,8 +972,8 @@
       (flash ? '<div class="flash">' + esc(flash) + "</div>" : "") +
 
       (dept ? "<h2>연구실</h2>" +
-        '<p class="note" style="margin-top:0">연구실 추가·삭제는 학과관리자만 할 수 있습니다. ' +
-        "삭제하면 그 연구실의 자료가 함께 지워집니다.</p>" +
+        '<p class="note" style="margin-top:0">연구실 추가와 상태 변경은 학과관리자만 할 수 있습니다. ' +
+        "쓰지 않는 연구실은 <b>폐쇄</b>로 바꾸세요 — 자료는 그대로 남습니다.</p>" +
         '<div id="labBox">불러오는 중…</div>' +
         '<form class="assign" id="labForm">' +
         '<input id="lbName" required placeholder="연구실명 *">' +
@@ -1055,9 +1055,6 @@
           ["운영", "휴면", "폐쇄"].map(function (o) {
             return '<option' + (o === r.status ? " selected" : "") + ">" + o + "</option>";
           }).join("") + "</select>";
-      } },
-      { h: "", cls: "act", f: function (r) {
-        return '<button class="btn sm danger" data-labdel="' + r.id + '">삭제</button>';
       } },
     ], labs, "등록된 연구실이 없습니다 — 아래에서 첫 연구실을 만드세요");
   }
@@ -1204,13 +1201,6 @@
   $("view").addEventListener("click", function (e) {
     var lg = e.target.closest ? e.target.closest("[data-legacy]") : null;
     if (lg) { e.preventDefault(); openLegacy(lg.getAttribute("data-legacy")); return; }
-    var ld = e.target.closest ? e.target.closest("button[data-labdel]") : null;
-    if (ld) {
-      e.preventDefault();
-      if (!confirm("이 연구실을 삭제할까요? 소속 구성원 배정과 연구실 자료가 함께 지워집니다.")) return;
-      labPost({ action: "delete", id: Number(ld.getAttribute("data-labdel")) });
-      return;
-    }
     var ps = e.target.closest ? e.target.closest("button[data-permsave]") : null;
     if (ps) {
       e.preventDefault();
