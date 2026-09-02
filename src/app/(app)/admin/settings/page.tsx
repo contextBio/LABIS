@@ -7,6 +7,7 @@ import {
 import { saveMenuPermissions } from "@/lib/permActions";
 import { labMenuMatrix, LEVEL_LABEL } from "@/lib/perm";
 import { ADJUSTABLE_MENUS } from "@/lib/menus";
+import { SheetSyncSection } from "@/components/SheetSyncSection";
 import { Badge, PageHeader, Section } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +48,7 @@ export default async function AdminSettingsPage() {
     <div>
       <PageHeader
         title={`관리자 설정 — ${ctx.labName}`}
-        desc="연구실 · 팀원 · 팀원별 메뉴 접근 권한"
+        desc="연구실 · 팀원 · 팀원별 메뉴 접근 권한 · 구글시트 연동"
       />
 
       {/* ── 1. 연구실 ── */}
@@ -251,6 +252,9 @@ export default async function AdminSettingsPage() {
           </ul>
         </Section>
       )}
+
+      {/* ── 4. 구글시트 연동 ── */}
+      {ctx.levels.sheets === "edit" && <SheetSyncSection labId={ctx.labId} />}
     </div>
   );
 }

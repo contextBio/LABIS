@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { requireUser, ACTIVE_LAB_COOKIE } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { logoutAction, switchLabAction } from "@/lib/authActions";
-import { MENUS } from "@/lib/menus";
+import { SIDEBAR_MENUS } from "@/lib/menus";
 import { menuLevels } from "@/lib/perm";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -35,7 +35,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const levels = activeLab && activeRole
     ? await menuLevels(activeLab.labId, user.id, activeRole, user.isDeptAdmin)
     : null;
-  const nav = MENUS.filter((m) => !levels || levels[m.key] !== "none");
+  const nav = SIDEBAR_MENUS.filter((m) => !levels || levels[m.key] !== "none");
 
   const labSwitcher = labs.length > 0 && (
     <form action={switchLabAction}>

@@ -19,6 +19,8 @@ export type MenuDef = {
   icon: string;
   /** 권한 조정 대상에서 제외 */
   fixed?: boolean;
+  /** false 면 사이드바에 독립 메뉴로 두지 않는다 (관리자 설정 안에 산다) */
+  sidebar?: boolean;
 };
 
 export const MENUS: MenuDef[] = [
@@ -32,8 +34,13 @@ export const MENUS: MenuDef[] = [
   { key: "instruments", label: "장비",          href: "/lims/instruments", hash: "#/lims/instruments", icon: "⚙" },
   { key: "samples",     label: "시료 (LIMS)",   href: "/lims/samples",     hash: "#/lims/samples",     icon: "⬡" },
   { key: "experiments", label: "실험 (LIMS)",   href: "/lims/experiments", hash: "#/lims/experiments", icon: "⚗" },
-  { key: "sheets",      label: "구글시트 연동", href: "/sync",             hash: "#/sheets",           icon: "⇄" },
+  // 구글시트 연동은 관리자 설정 안의 한 구획이다 — 사이드바 메뉴로는 두지 않지만
+  // 각 메뉴 상단의 항목별 입력창과 시트 API 는 이 권한으로 계속 잠근다.
+  { key: "sheets",      label: "구글시트 연동", href: "/admin/settings",   hash: "#/settings",         icon: "⇄", sidebar: false },
 ];
+
+/** 사이드바에 뜨는 메뉴 */
+export const SIDEBAR_MENUS: MenuDef[] = MENUS.filter((m) => m.sidebar !== false);
 
 /** 팀관리자가 조정할 수 있는 메뉴 */
 export const ADJUSTABLE_MENUS: MenuDef[] = MENUS.filter((m) => !m.fixed);

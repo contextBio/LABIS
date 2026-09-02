@@ -14,8 +14,8 @@ const SAFE_PATH = /^\/[A-Za-z0-9/_-]*$/;
 
 function revalidateFrom(fd: FormData) {
   const from = String(fd.get("from") ?? "");
-  if (from && from !== "/sync" && SAFE_PATH.test(from)) revalidatePath(from);
-  revalidatePath("/sync");
+  if (from && from !== "/admin/settings" && SAFE_PATH.test(from)) revalidatePath(from);
+  revalidatePath("/admin/settings");
   revalidatePath("/");
 }
 
@@ -46,13 +46,13 @@ export async function saveSpreadsheet(fd: FormData) {
   const id = extractSpreadsheetId(String(fd.get("spreadsheet") ?? ""));
   await setLabSetting(ctx.labId, "spreadsheet_id", id);
   await audit(ctx.user.id, ctx.labId, "sync.spreadsheet", "setting", "spreadsheet_id", { id });
-  revalidatePath("/sync");
+  revalidatePath("/admin/settings");
 }
 
 export async function runExport() {
   const ctx = await requireLab("LAB_MANAGER");
   await runExportAll(ctx.labId, ctx.user.id);
-  revalidatePath("/sync");
+  revalidatePath("/admin/settings");
 }
 
 export async function runImport(fd: FormData) {
@@ -60,6 +60,6 @@ export async function runImport(fd: FormData) {
   const tab = String(fd.get("tab") ?? "");
   const tabs = (TABS as readonly string[]).includes(tab) ? [tab as TabName] : undefined;
   await runImportAll(ctx.labId, ctx.user.id, tabs);
-  revalidatePath("/sync");
+  revalidatePath("/admin/settings");
   revalidatePath("/");
 }
