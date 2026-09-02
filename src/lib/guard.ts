@@ -16,7 +16,7 @@ export type CurrentUser = {
   email: string;
   name: string;
   isDeptAdmin: boolean;
-  memberships: { labId: number; labName: string; role: LabRole }[];
+  memberships: { labId: number; labName: string; labStatus: string; role: LabRole }[];
 };
 
 /** 로그인 필수. 세션을 검증하고 DB에서 최신 사용자·소속 정보를 가져온다. */
@@ -36,6 +36,7 @@ export async function requireUser(): Promise<CurrentUser> {
     memberships: user.memberships.map((m) => ({
       labId: m.labId,
       labName: m.lab.name,
+      labStatus: m.lab.status,
       role: m.role,
     })),
   };
@@ -92,13 +93,17 @@ export async function requireLab(
     }
   }
 
-  // 쿠키가 없거나 무효하면 첫 소속 랩으로
+  // 쿠키가 없거나 무효하면 첫 소속 랩으로 — 폐쇄된 랩은 뒤로 미룬다
   if (labId === null) {
-    if (user.memberships.length > 0) {
-      labId = user.memberships[0].labId;
-      role = user.memberships[0].role;
+    const open = user.memberships.filter((m) => m.labStatus !== "폐쇄");
+    const pick = open[0] ?? user.memberships[0];
+    if (pick) {
+      labId = pick.labId;
+      role = pick.role;
     } else if (user.isDeptAdmin) {
-      const lab = await prisma.lab.findFirst({ orderBy: { id: "asc" } });
+      const lab =
+        (await prisma.lab.findFirst({ where: { status: { not: "폐쇄" } }, orderBy: { id: "asc" } })) ??
+        (await prisma.lab.findFirst({ orderBy: { id: "asc" } }));
       if (lab) {
         labId = lab.id;
         role = "PI";

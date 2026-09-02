@@ -11,13 +11,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const store = await cookies();
   const activeLabId = Number(store.get(ACTIVE_LAB_COOKIE)?.value ?? NaN);
 
-  // 전환 가능한 랩: 소속 랩 (학과관리자는 전체 랩)
-  const labs = user.isDeptAdmin
+  // 전환 가능한 랩: 소속 랩 (학과관리자는 전체 랩).
+  // 폐쇄된 랩은 전환기에서 감춘다 — 지금 보고 있는 랩이면 남겨 둔다(빠져나갈 길을 막지 않으려고).
+  const allLabs = user.isDeptAdmin
     ? (await prisma.lab.findMany({ orderBy: { name: "asc" } })).map((l) => ({
         labId: l.id,
         labName: l.name,
+        labStatus: l.status,
       }))
     : user.memberships;
+  const labs = allLabs.filter((l) => l.labStatus !== "폐쇄" || l.labId === activeLabId);
 
   const currentLab =
     labs.find((l) => l.labId === activeLabId)?.labName ?? labs[0]?.labName ?? "";

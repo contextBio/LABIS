@@ -46,7 +46,7 @@ export type ApiUser = {
   email: string;
   name: string;
   isDeptAdmin: boolean;
-  memberships: { labId: number; labName: string; role: LabRole }[];
+  memberships: { labId: number; labName: string; labStatus: string; role: LabRole }[];
 };
 
 function fail(req: NextRequest, status: number, error: string): NextResponse {
@@ -75,6 +75,7 @@ export async function apiUser(req: NextRequest): Promise<ApiUser | NextResponse>
     memberships: user.memberships.map((mb) => ({
       labId: mb.labId,
       labName: mb.lab.name,
+      labStatus: mb.lab.status,
       role: mb.role,
     })),
   };

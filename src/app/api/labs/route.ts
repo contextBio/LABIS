@@ -24,7 +24,9 @@ function withCors(req: NextRequest, res: NextResponse): NextResponse {
 }
 
 export async function GET(req: NextRequest) {
+  // 폐쇄된 연구실은 입장 선택창에 내지 않는다 (자료는 남아 있고 관리자 설정에서만 보인다)
   const labs = await prisma.lab.findMany({
+    where: { status: { not: "폐쇄" } },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });
