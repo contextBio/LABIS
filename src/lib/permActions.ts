@@ -25,6 +25,6 @@ export async function saveMenuPermissions(fd: FormData) {
     if (v !== "edit") changed[m.key] = v;
   }
   await audit(ctx.user.id, ctx.labId, "perm.menu", "user", userId, changed);
-  revalidatePath("/lab/permissions");
+  revalidatePath("/admin/settings");
   revalidatePath("/", "layout");
 }

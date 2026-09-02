@@ -24,10 +24,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const canManageLab =
     user.isDeptAdmin || user.memberships.some((m) => m.role === "PI" || m.role === "LAB_MANAGER");
-  // 팀관리자 = 연구책임자(+학과관리자) — 메뉴별 권한을 조정한다
-  const isTeamAdmin =
-    user.isDeptAdmin || user.memberships.some((m) => m.role === "PI");
-
   // 팀관리자가 잠근 메뉴는 사이드바에서 감춘다 (경로 접근은 서버 가드가 막는다)
   const activeLab = labs.find((l) => l.labId === activeLabId) ?? labs[0];
   const activeRole =
@@ -57,20 +53,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <>
       {canManageLab && (
         <Link
-          href="/lab/members"
-          className="mb-0.5 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-sky-50 hover:text-sky-700"
-        >
-          <span className="w-4 text-center text-slate-400">☰</span>
-          랩 구성원 관리
-        </Link>
-      )}
-      {isTeamAdmin && (
-        <Link
-          href="/lab/permissions"
+          href="/admin/settings"
           className="mb-0.5 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-sky-50 hover:text-sky-700"
         >
           <span className="w-4 text-center text-slate-400">⚿</span>
-          메뉴 권한 (팀관리자)
+          관리자 설정
         </Link>
       )}
       {user.isDeptAdmin && (
@@ -79,7 +66,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           className="mb-0.5 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-sky-50 hover:text-sky-700"
         >
           <span className="w-4 text-center text-slate-400">★</span>
-          학과 관리
+          사용자 관리
         </Link>
       )}
     </>

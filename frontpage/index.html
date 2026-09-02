@@ -965,22 +965,48 @@
   };
 
   /* ── 설정 (관리자 페이지) — 구성원 배정이 여기 들어간다 ── */
+  /* ── 관리자 설정 — 연구실 · 팀원 · 팀원별 메뉴 접근 권한 ── */
   VIEWS.settings = function (v, _id, flash) {
-    v.innerHTML = head("설정", "연구실 관리 — 구성원 배정과 권한") +
+    var dept = !!(ME && ME.user && ME.user.isDeptAdmin);
+    v.innerHTML = head("관리자 설정", "연구실 · 팀원 · 팀원별 메뉴 접근 권한") +
       (flash ? '<div class="flash">' + esc(flash) + "</div>" : "") +
-      "<h2>구성원</h2>" +
-      '<p class="note" style="margin-top:0">팀 운영자(연구책임자·랩매니저)와 팀원을 배정합니다. ' +
-      "이 연구실에 배정되지 않은 계정은 접근할 수 없습니다.</p>" +
-      '<div id="assignBox"></div><h3>배정된 구성원</h3><div id="t1"></div>' +
+
+      (dept ? "<h2>연구실</h2>" +
+        '<p class="note" style="margin-top:0">연구실 추가·삭제는 학과관리자만 할 수 있습니다. ' +
+        "삭제하면 그 연구실의 자료가 함께 지워집니다.</p>" +
+        '<div id="labBox">불러오는 중…</div>' +
+        '<form class="assign" id="labForm">' +
+        '<input id="lbName" required placeholder="연구실명 *">' +
+        '<input id="lbPi" placeholder="PI 이름">' +
+        '<input id="lbRoom" placeholder="호실">' +
+        '<button type="submit" class="btn solid">연구실 추가</button></form>' : "") +
+
+      "<h2>팀원</h2>" +
+      '<p class="note" style="margin-top:0">이미 contextBio 계정이 있는 이메일이면 바로 배정되고, ' +
+      "아니면 초대 링크가 만들어집니다. 이 연구실에 배정되지 않은 계정은 접근할 수 없습니다.</p>" +
+      '<div id="assignBox"></div><h3>배정된 팀원</h3><div id="t1"></div>' +
       '<div id="inviteSec" style="display:none"><h3>대기 중인 초대</h3><div id="t2"></div></div>' +
-      (rank() >= 3 ? '<h2>메뉴 권한 (팀관리자)</h2>' +
-        '<p class="note" style="margin-top:0">구성원별로 메뉴 접근을 조정합니다 — 편집 / 읽기 전용 / 차단. ' +
+
+      (rank() >= 3 ? "<h2>팀원별 메뉴 접근 권한</h2>" +
+        '<p class="note" style="margin-top:0">메뉴마다 편집 / 읽기 전용 / 차단을 정합니다. ' +
         "권한은 <b>좁히기만</b> 합니다: 편집으로 둬도 역할이 모자라면 여전히 막힙니다.</p>" +
         '<div id="permBox">불러오는 중…</div>' : "") +
-      "<h2>학과 관리</h2>" +
-      '<p class="note" style="margin-top:0">연구실 개설·폐쇄와 학과관리자 지정은 아직 기존 화면에서 합니다.</p>' +
-      '<div class="toolbar"><button class="btn" data-legacy="/admin/labs">학과 관리 열기 ↗</button></div>';
+
+      (dept ? "<h2>사용자 관리</h2>" +
+        '<p class="note" style="margin-top:0">전체 계정·c1 연결·학과관리자 지정은 아직 기존 화면에서 합니다.</p>' +
+        '<div class="toolbar"><button class="btn" data-legacy="/admin/labs">사용자 관리 열기 ↗</button></div>' : "");
+
     req("/api/v1/lab/members?lab=" + LAB).then(function (d) { renderTeam(d); }).catch(showErr);
+    if (dept) {
+      req("/api/v1/labs").then(function (d) { renderLabs(d.labs); }).catch(function (e) {
+        var b = $("labBox");
+        if (b) b.innerHTML = '<p class="note bad">불러오지 못했습니다 (' + esc(e.code || e.message) + ")</p>";
+      });
+      $("labForm").addEventListener("submit", function (e) {
+        e.preventDefault();
+        labPost({ action: "create", name: $("lbName").value, piName: $("lbPi").value, room: $("lbRoom").value });
+      });
+    }
     if (rank() >= 3) {
       req("/api/v1/perm?lab=" + LAB)
         .then(function (d) { renderPerm(d.menus, d.rows); })
@@ -990,6 +1016,51 @@
         });
     }
   };
+
+  function labPost(body) {
+    return req("/api/v1/labs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(function (d) {
+      renderLabs(d.labs);
+      var f = $("labForm");
+      if (f) { $("lbName").value = ""; $("lbPi").value = ""; $("lbRoom").value = ""; }
+      // 연구실 목록이 바뀌었으니 랩 전환기도 새로 받는다
+      return req("/api/v1/me").then(function (d2) {
+        ME = d2;
+        var ls = ME.labs || [];
+        if (!ls.some(function (l) { return l.labId === LAB; })) {
+          // 보고 있던 연구실이 사라졌다 — 첫 연구실로 옮긴다
+          LAB = ls.length ? ls[0].labId : 0;
+          try { localStorage.setItem(LAB_KEY, String(LAB)); } catch (_) {}
+          CACHE = {};
+          renderLabSelect();
+          route();
+          return;
+        }
+        renderLabSelect();
+      });
+    }).catch(function (err) { alert("실패: " + (err.code || err.message)); });
+  }
+
+  function renderLabs(labs) {
+    var box = $("labBox"); if (!box) return;
+    box.innerHTML = table([
+      { h: "연구실명", k: "name" }, { h: "PI", k: "piName", cls: "dim" },
+      { h: "호실", k: "room", cls: "dim" },
+      { h: "구성원", cls: "num", f: function (r) { return r.members + "명"; } },
+      { h: "상태", cls: "act", f: function (r) {
+        return '<select data-labst="' + r.id + '">' +
+          ["운영", "휴면", "폐쇄"].map(function (o) {
+            return '<option' + (o === r.status ? " selected" : "") + ">" + o + "</option>";
+          }).join("") + "</select>";
+      } },
+      { h: "", cls: "act", f: function (r) {
+        return '<button class="btn sm danger" data-labdel="' + r.id + '">삭제</button>';
+      } },
+    ], labs, "등록된 연구실이 없습니다 — 아래에서 첫 연구실을 만드세요");
+  }
   VIEWS.team = VIEWS.settings;   // 예전 해시(#/team)·재렌더 호출 호환
 
   var LEVELS = [["edit", "편집"], ["view", "읽기"], ["none", "차단"]];
@@ -1113,6 +1184,11 @@
 
   /* ── 행 조작 위임 (상태 select · 삭제 · 단일 op 버튼) ── */
   $("view").addEventListener("change", function (e) {
+    var ls = e.target.closest ? e.target.closest("select[data-labst]") : null;
+    if (ls) {
+      labPost({ action: "status", id: Number(ls.getAttribute("data-labst")), status: ls.value });
+      return;
+    }
     var s2 = e.target.closest ? e.target.closest("select[data-sop]") : null;
     if (!s2) return;
     var kinds = (s2.getAttribute("data-kinds") || "").split(",").filter(Boolean);
@@ -1128,6 +1204,13 @@
   $("view").addEventListener("click", function (e) {
     var lg = e.target.closest ? e.target.closest("[data-legacy]") : null;
     if (lg) { e.preventDefault(); openLegacy(lg.getAttribute("data-legacy")); return; }
+    var ld = e.target.closest ? e.target.closest("button[data-labdel]") : null;
+    if (ld) {
+      e.preventDefault();
+      if (!confirm("이 연구실을 삭제할까요? 소속 구성원 배정과 연구실 자료가 함께 지워집니다.")) return;
+      labPost({ action: "delete", id: Number(ld.getAttribute("data-labdel")) });
+      return;
+    }
     var ps = e.target.closest ? e.target.closest("button[data-permsave]") : null;
     if (ps) {
       e.preventDefault();
@@ -1227,7 +1310,7 @@
     { h: "#/lims/samples", t: "시료 (LIMS)", v: "samples", k: "samples" },
     { h: "#/lims/experiments", t: "실험 (LIMS)", v: "experiments", k: "experiments" },
     { h: "#/sheets", t: "구글시트 연동", v: "sheets", k: "sheets", sep: true },
-    { h: "#/settings", t: "설정", v: "settings" },
+    { h: "#/settings", t: "관리자 설정", v: "settings" },
   ];
   function labName() {
     var l = (ME.labs || []).find(function (x) { return x.labId === LAB; });
@@ -1304,14 +1387,7 @@
       }
       LAB = matched ? Number(wantLab) : labs[0].labId;
       try { localStorage.setItem(LAB_KEY, String(LAB)); } catch (_) {}
-      var dl = $("dashLab");
-      dl.innerHTML = "";
-      labs.forEach(function (l) {
-        var o = document.createElement("option");
-        o.value = String(l.labId); o.textContent = l.labName;
-        if (l.labId === LAB) o.selected = true;
-        dl.appendChild(o);
-      });
+      renderLabSelect();
       $("entry").style.display = "none";
       $("app").style.display = "block";
       route();
@@ -1338,6 +1414,19 @@
       });
     });
   });
+
+  /** 상단 연구실 전환기 — ME.labs 기준으로 다시 그린다 */
+  function renderLabSelect() {
+    var dl = $("dashLab");
+    if (!dl || !ME) return;
+    dl.innerHTML = "";
+    (ME.labs || []).forEach(function (l) {
+      var o = document.createElement("option");
+      o.value = String(l.labId); o.textContent = l.labName;
+      if (l.labId === LAB) o.selected = true;
+      dl.appendChild(o);
+    });
+  }
 
   function showPicker() {
     var w = $("entryWait"); if (w) w.style.display = "none";

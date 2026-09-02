@@ -1,0 +1,259 @@
+import { requireLab } from "@/lib/guard";
+import { prisma } from "@/lib/prisma";
+import {
+  createLab, setLabStatus, deleteLab,
+  inviteMember, cancelInvite, changeMemberRole, removeMember,
+} from "@/lib/orgActions";
+import { saveMenuPermissions } from "@/lib/permActions";
+import { labMenuMatrix, LEVEL_LABEL } from "@/lib/perm";
+import { ADJUSTABLE_MENUS } from "@/lib/menus";
+import { Badge, PageHeader, Section } from "@/components/ui";
+
+export const dynamic = "force-dynamic";
+
+const ROLE_KO: Record<string, string> = {
+  PI: "연구책임자",
+  LAB_MANAGER: "랩매니저",
+  MEMBER: "연구원",
+};
+
+export default async function AdminSettingsPage() {
+  // 팀 운영자(랩매니저 이상) 전용. 학과관리자는 소속이 없어도 PI 로 들어온다.
+  const ctx = await requireLab("LAB_MANAGER");
+  const isPI = ctx.role === "PI";
+  const isDeptAdmin = ctx.user.isDeptAdmin;
+
+  const [labs, members, invites, matrix] = await Promise.all([
+    isDeptAdmin
+      ? prisma.lab.findMany({
+          include: { _count: { select: { memberships: true } } },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([]),
+    prisma.membership.findMany({
+      where: { labId: ctx.labId },
+      include: { user: true },
+      orderBy: [{ role: "asc" }, { joinedAt: "asc" }],
+    }),
+    prisma.invitation.findMany({
+      where: { labId: ctx.labId, acceptedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: "desc" },
+    }),
+    isPI ? labMenuMatrix(ctx.labId) : Promise.resolve([]),
+  ]);
+  const appUrl = process.env.APP_URL || "http://localhost:3100";
+
+  return (
+    <div>
+      <PageHeader
+        title={`관리자 설정 — ${ctx.labName}`}
+        desc="연구실 · 팀원 · 팀원별 메뉴 접근 권한"
+      />
+
+      {/* ── 1. 연구실 ── */}
+      {isDeptAdmin && (
+        <Section title={`연구실 (${labs.length}개)`}>
+          <table className="tbl mb-4">
+            <thead>
+              <tr><th>연구실명</th><th>PI</th><th>호실</th><th>구성원</th><th>상태</th><th></th></tr>
+            </thead>
+            <tbody>
+              {labs.map((l) => (
+                <tr key={l.id}>
+                  <td className="font-medium">{l.name}</td>
+                  <td>{l.piName || "-"}</td>
+                  <td className="text-xs text-slate-500">{l.room}</td>
+                  <td>{l._count.memberships}명</td>
+                  <td><Badge value={l.status} /></td>
+                  <td className="whitespace-nowrap text-right">
+                    <form action={setLabStatus} className="inline-flex items-center gap-1">
+                      <input type="hidden" name="id" value={l.id} />
+                      <select name="status" defaultValue={l.status} className="inp !w-auto !py-0.5 !text-xs">
+                        <option>운영</option><option>휴면</option><option>폐쇄</option>
+                      </select>
+                      <button className="btn-ghost">변경</button>
+                    </form>{" "}
+                    <form action={deleteLab} className="inline">
+                      <input type="hidden" name="id" value={l.id} />
+                      <button className="btn-danger">삭제</button>
+                    </form>
+                  </td>
+                </tr>
+              ))}
+              {labs.length === 0 && (
+                <tr><td colSpan={6} className="py-6 text-center text-slate-400">등록된 연구실이 없습니다 — 아래에서 첫 연구실을 만드세요</td></tr>
+              )}
+            </tbody>
+          </table>
+          <form action={createLab} className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <input name="name" required placeholder="연구실명 *" className="inp" />
+            <input name="pi_name" placeholder="PI 이름" className="inp" />
+            <input name="room" placeholder="호실" className="inp" />
+            <button className="btn justify-center">연구실 추가</button>
+          </form>
+          <p className="mt-2 text-xs text-slate-400">
+            연구실 추가·삭제는 학과관리자만 할 수 있습니다. 삭제하면 그 연구실의 자료가 함께 지워집니다.
+          </p>
+        </Section>
+      )}
+
+      {/* ── 2. 팀원 ── */}
+      <Section title={`팀원 (${members.length}명)`}>
+        <table className="tbl mb-4">
+          <thead>
+            <tr><th>이름</th><th>이메일</th><th>역할</th><th>합류일</th><th></th></tr>
+          </thead>
+          <tbody>
+            {members.map((m) => (
+              <tr key={m.id}>
+                <td className="font-medium">{m.user.name}</td>
+                <td className="text-xs text-slate-500">{m.user.email}</td>
+                <td>{ROLE_KO[m.role]}</td>
+                <td className="whitespace-nowrap font-mono text-xs">
+                  {m.joinedAt.toISOString().slice(0, 10)}
+                </td>
+                <td className="whitespace-nowrap text-right">
+                  {isPI && m.userId !== ctx.user.id && (
+                    <>
+                      <form action={changeMemberRole} className="inline-flex items-center gap-1">
+                        <input type="hidden" name="id" value={m.id} />
+                        <select name="role" defaultValue={m.role} className="inp !w-auto !py-0.5 !text-xs">
+                          <option value="MEMBER">연구원</option>
+                          <option value="LAB_MANAGER">랩매니저</option>
+                          <option value="PI">연구책임자</option>
+                        </select>
+                        <button className="btn-ghost">변경</button>
+                      </form>{" "}
+                      <form action={removeMember} className="inline">
+                        <input type="hidden" name="id" value={m.id} />
+                        <button className="btn-danger">삭제</button>
+                      </form>
+                    </>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <form action={inviteMember} className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <input name="email" type="email" required placeholder="이메일 * (contextBio 계정)" className="inp col-span-2" />
+          <select name="role" className="inp">
+            <option value="MEMBER">연구원</option>
+            <option value="LAB_MANAGER">랩매니저</option>
+            {isPI && <option value="PI">연구책임자</option>}
+          </select>
+          <button className="btn justify-center">팀원 추가</button>
+        </form>
+
+        {invites.length > 0 && (
+          <>
+            <h3 className="mb-2 mt-5 text-sm font-semibold text-slate-700">대기 중인 초대</h3>
+            <table className="tbl">
+              <thead>
+                <tr><th>이메일</th><th>역할</th><th>초대 링크 (복사해서 전달)</th><th>만료</th><th></th></tr>
+              </thead>
+              <tbody>
+                {invites.map((iv) => (
+                  <tr key={iv.id}>
+                    <td>{iv.email}</td>
+                    <td>{ROLE_KO[iv.role]}</td>
+                    <td>
+                      <input
+                        readOnly
+                        value={`${appUrl}/invite/${iv.token}`}
+                        className="inp !py-1 font-mono !text-[11px]"
+                      />
+                    </td>
+                    <td className="whitespace-nowrap font-mono text-xs">
+                      {iv.expiresAt.toISOString().slice(0, 10)}
+                    </td>
+                    <td className="text-right">
+                      <form action={cancelInvite} className="inline">
+                        <input type="hidden" name="id" value={iv.id} />
+                        <button className="btn-danger">취소</button>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+        <p className="mt-3 text-xs text-slate-400">
+          이미 contextBio 계정이 있는 이메일이면 바로 배정되고, 아니면 초대 링크가 만들어집니다 (7일 유효).
+          역할 변경·삭제는 연구책임자만 할 수 있습니다.
+        </p>
+      </Section>
+
+      {/* ── 3. 팀원별 메뉴 접근 권한 ── */}
+      {isPI && (
+        <Section title="팀원별 메뉴 접근 권한">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>팀원</th>
+                {ADJUSTABLE_MENUS.map((m) => (
+                  <th key={m.key} className="whitespace-nowrap">{m.label}</th>
+                ))}
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {matrix.map((r) => (
+                <tr key={r.userId}>
+                  <td className="whitespace-nowrap">
+                    <div className="font-medium">{r.name}</div>
+                    <div className="text-[11px] text-slate-400">
+                      {ROLE_KO[r.role] ?? r.role} · {r.email}
+                    </div>
+                  </td>
+                  {r.adjustable ? (
+                    <>
+                      {ADJUSTABLE_MENUS.map((m) => (
+                        <td key={m.key}>
+                          <select
+                            form={`perm-${r.userId}`}
+                            name={`level_${m.key}`}
+                            defaultValue={r.levels[m.key]}
+                            className="inp !w-auto !py-0.5 !text-xs"
+                          >
+                            <option value="edit">편집</option>
+                            <option value="view">읽기</option>
+                            <option value="none">차단</option>
+                          </select>
+                        </td>
+                      ))}
+                      <td className="whitespace-nowrap text-right">
+                        <form action={saveMenuPermissions} id={`perm-${r.userId}`}>
+                          <input type="hidden" name="user_id" value={r.userId} />
+                          <button className="btn">저장</button>
+                        </form>
+                      </td>
+                    </>
+                  ) : (
+                    <td colSpan={ADJUSTABLE_MENUS.length + 1} className="text-xs text-slate-400">
+                      연구책임자·학과관리자는 조정 대상이 아닙니다 (항상 전체 편집)
+                    </td>
+                  )}
+                </tr>
+              ))}
+              {matrix.length === 0 && (
+                <tr>
+                  <td colSpan={ADJUSTABLE_MENUS.length + 2} className="py-6 text-center text-slate-400">
+                    배정된 팀원이 없습니다
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <ul className="mt-3 space-y-1 text-xs text-slate-500">
+            <li><b>{LEVEL_LABEL.edit}</b> — 역할이 허용하는 만큼 씁니다 (지금까지와 동일).</li>
+            <li><b>{LEVEL_LABEL.view}</b> — 목록은 보지만 등록·수정·삭제가 막히고 입력 폼이 사라집니다.</li>
+            <li><b>{LEVEL_LABEL.none}</b> — 사이드바에서 메뉴가 사라지고, 주소로 들어와도 홈으로 돌려보냅니다.</li>
+          </ul>
+        </Section>
+      )}
+    </div>
+  );
+}

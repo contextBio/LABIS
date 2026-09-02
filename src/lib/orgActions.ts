@@ -24,6 +24,7 @@ export async function createLab(fd: FormData) {
   });
   await audit(admin.id, lab.id, "lab.create", "lab", lab.id, { name });
   revalidatePath("/admin/labs");
+  revalidatePath("/admin/settings");
 }
 
 export async function setLabStatus(fd: FormData) {
@@ -33,6 +34,7 @@ export async function setLabStatus(fd: FormData) {
   await prisma.lab.update({ where: { id }, data: { status } });
   await audit(admin.id, id, "lab.status", "lab", id, { status });
   revalidatePath("/admin/labs");
+  revalidatePath("/admin/settings");
 }
 
 export async function deleteLab(fd: FormData) {
@@ -41,6 +43,7 @@ export async function deleteLab(fd: FormData) {
   await prisma.lab.delete({ where: { id } });
   await audit(admin.id, null, "lab.delete", "lab", id);
   revalidatePath("/admin/labs");
+  revalidatePath("/admin/settings");
 }
 
 /** c1 리눅스 계정명 연결 — MUSE 공동 로그인(SSO·PAM)이 이 사용자로 매핑된다 */
@@ -55,6 +58,7 @@ export async function setUsername(fd: FormData) {
   });
   await audit(admin.id, null, "user.username", "user", userId, { username });
   revalidatePath("/admin/labs");
+  revalidatePath("/admin/settings");
 }
 
 export async function toggleDeptAdmin(fd: FormData) {
@@ -71,6 +75,7 @@ export async function toggleDeptAdmin(fd: FormData) {
     isDeptAdmin: !target.isDeptAdmin,
   });
   revalidatePath("/admin/labs");
+  revalidatePath("/admin/settings");
 }
 
 // ---------- 랩 구성원 관리 (PI / 랩매니저) ----------
@@ -92,7 +97,7 @@ export async function inviteMember(fd: FormData) {
     },
   });
   await audit(ctx.user.id, ctx.labId, "invite.create", "invitation", invite.id, { email, role });
-  revalidatePath("/lab/members");
+  revalidatePath("/admin/settings");
 }
 
 export async function cancelInvite(fd: FormData) {
@@ -100,7 +105,7 @@ export async function cancelInvite(fd: FormData) {
   const id = Number(fd.get("id"));
   await prisma.invitation.deleteMany({ where: { id, labId: ctx.labId, acceptedAt: null } });
   await audit(ctx.user.id, ctx.labId, "invite.cancel", "invitation", id);
-  revalidatePath("/lab/members");
+  revalidatePath("/admin/settings");
 }
 
 export async function changeMemberRole(fd: FormData) {
@@ -109,7 +114,7 @@ export async function changeMemberRole(fd: FormData) {
   const role = asRole(s(fd, "role"));
   await prisma.membership.updateMany({ where: { id, labId: ctx.labId }, data: { role } });
   await audit(ctx.user.id, ctx.labId, "member.role", "membership", id, { role });
-  revalidatePath("/lab/members");
+  revalidatePath("/admin/settings");
 }
 
 export async function removeMember(fd: FormData) {
@@ -120,5 +125,5 @@ export async function removeMember(fd: FormData) {
   if (target.userId === ctx.user.id) return; // 자기 자신 제외 방지
   await prisma.membership.delete({ where: { id: target.id } });
   await audit(ctx.user.id, ctx.labId, "member.remove", "membership", id);
-  revalidatePath("/lab/members");
+  revalidatePath("/admin/settings");
 }
