@@ -207,6 +207,17 @@
   var LAB_KEY = "labis.activeLab";
 
   var $ = function (id) { return document.getElementById(id); };
+
+  /** 화면 세대 — route() 마다 올라간다. 늦게 온 응답이 다음 화면의 DOM 을 건드리지 못하게. */
+  var RENDER_SEQ = 0;
+  function stale(seq) { return seq !== RENDER_SEQ; }
+  /** 없는 자리에 쓰지 않는다 (화면이 바뀐 뒤 도착한 응답) */
+  function setHtml(id, html) {
+    var el = $(id);
+    if (!el) return false;
+    el.innerHTML = html;
+    return true;
+  }
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -444,9 +455,10 @@
       '<div class="slog' + logTone(r.log) + '">' +
         (r.log ? esc(r.log.at) + " · " + esc(r.log.lines.join(" / ")) : "") + "</div></div>";
   }
-  /** plain = 전용 화면(구글시트 연동 메뉴) — 접이식 껍데기 없이 목록만 편다 */
-  function renderSheets(rows, plain) {
-    var box = $("sheetBox"); if (!box) return;
+  /** plain = 관리자 설정 안의 구획 — 접이식 껍데기 없이 목록만 편다.
+      boxId 를 나눠 각 메뉴 상단 패널(sheetBox)과 자리를 섞지 않는다. */
+  function renderSheets(rows, plain, boxId) {
+    var box = $(boxId || "sheetBox"); if (!box) return;
     var body = '<div class="sbody">' + rows.map(sheetRowHtml).join("") + "</div>";
     if (plain) { box.innerHTML = body; return; }
     var linked = rows.filter(function (r) { return !!r.id; }).length;
@@ -456,12 +468,13 @@
   }
   function mountSheets(tabs) {
     var box = $("sheetBox"); if (!box) return;
+    var seq = RENDER_SEQ;
     box.innerHTML = sheetShell(sheetSummary("불러오는 중…"), SHEETS_OPEN);
     req("/api/v1/sheet?lab=" + LAB + "&tabs=" + encodeURIComponent(tabs.join(",")))
-      .then(function (d) { renderSheets(d.rows); })
+      .then(function (d) { if (stale(seq)) return; renderSheets(d.rows); })
       .catch(function (e) {
-        var b = $("sheetBox");
-        if (b) b.innerHTML = sheetShell(sheetSummary("불러오지 못했습니다 (" + (e.code || e.message) + ")", true), SHEETS_OPEN);
+        if (stale(seq)) return;
+        setHtml("sheetBox", sheetShell(sheetSummary("불러오지 못했습니다 (" + (e.code || e.message) + ")", true), SHEETS_OPEN));
       });
   }
 
@@ -939,7 +952,7 @@
     return "<h2>구글시트 연동</h2>" +
       '<p class="note" style="margin-top:0">항목마다 구글시트 주소를 넣으면, 저장하는 즉시 시트를 읽어 ' +
       "그 항목 DB에 반영합니다. 같은 입력창이 각 메뉴 상단에도 붙어 있습니다.</p>" +
-      '<div id="sheetBox">불러오는 중…</div><div id="acct" class="note" style="margin-top:6px"></div>' +
+      '<div id="sheetAll">불러오는 중…</div><div id="acct" class="note" style="margin-top:6px"></div>' +
       "<h3>한 번에 실행</h3>" +
       '<div class="toolbar">' +
       '<button class="btn solid" data-all="import_all">⬇ 연결된 항목 전부 가져오기 (시트 → LABIS)</button>' +
@@ -952,23 +965,25 @@
   }
 
   function loadSheetSection() {
+    var seq = RENDER_SEQ;
     req("/api/v1/sheet?lab=" + LAB + "&full=1").then(function (d) {
-      renderSheets(d.rows, true);
-      $("acct").innerHTML = d.account
+      if (stale(seq)) return;
+      renderSheets(d.rows, true, "sheetAll");
+      setHtml("acct", d.account
         ? "인증: 서비스 계정 <b>" + esc(d.account) + "</b> — 비공개 시트도 읽고 씁니다. 각 시트를 이 계정에 편집자로 공유하세요."
-        : "인증: 서비스 계정 없음 — <b>링크가 있는 모든 사용자</b>로 공유된 시트의 <b>가져오기만</b> 됩니다.";
+        : "인증: 서비스 계정 없음 — <b>링크가 있는 모든 사용자</b>로 공유된 시트의 <b>가져오기만</b> 됩니다.");
       if (!d.account && $("expBtn")) $("expBtn").disabled = true;
-      $("allLog").innerHTML = d.syncLog
+      setHtml("allLog", d.syncLog
         ? '<div class="slog' + logTone(d.syncLog) + '">최근 실행 · ' + esc(d.syncLog.at) + "</div>" +
           '<ul class="guide">' + d.syncLog.lines.map(function (l) { return "<li>" + esc(l) + "</li>"; }).join("") + "</ul>"
-        : "";
-      $("guide").innerHTML = '<ul class="guide">' + d.guide.map(function (g) {
+        : "");
+      setHtml("guide", '<ul class="guide">' + (d.guide || []).map(function (g) {
         return "<li><b>" + esc(g.tab) + "</b>" + (g.importable ? "" : " (내보내기 전용)") +
           " — " + esc(g.headers.join(", ")) + "</li>";
-      }).join("") + "</ul>";
+      }).join("") + "</ul>");
     }).catch(function (e) {
-      var b = $("sheetBox");
-      if (b) b.innerHTML = '<p class="note bad">불러오지 못했습니다 (' + esc(e.code || e.message) + ")</p>";
+      if (stale(seq)) return;
+      setHtml("sheetAll", '<p class="note bad">불러오지 못했습니다 (' + esc(e.code || e.message) + ")</p>");
     });
   }
 
@@ -1007,11 +1022,16 @@
         '<p class="note" style="margin-top:0">전체 계정·c1 연결·학과관리자 지정은 아직 기존 화면에서 합니다.</p>' +
         '<div class="toolbar"><button class="btn" data-legacy="/admin/labs">사용자 관리 열기 ↗</button></div>' : "");
 
-    req("/api/v1/lab/members?lab=" + LAB).then(function (d) { renderTeam(d); }).catch(showErr);
+    var seq = RENDER_SEQ;
+    req("/api/v1/lab/members?lab=" + LAB)
+      .then(function (d) { if (!stale(seq)) renderTeam(d); })
+      .catch(function (e) { if (!stale(seq)) showErr(e); });
     if (dept) {
-      req("/api/v1/labs").then(function (d) { renderLabs(d.labs); }).catch(function (e) {
-        var b = $("labBox");
-        if (b) b.innerHTML = '<p class="note bad">불러오지 못했습니다 (' + esc(e.code || e.message) + ")</p>";
+      req("/api/v1/labs").then(function (d) {
+        if (!stale(seq)) renderLabs(d.labs);
+      }).catch(function (e) {
+        if (stale(seq)) return;
+        setHtml("labBox", '<p class="note bad">불러오지 못했습니다 (' + esc(e.code || e.message) + ")</p>");
       });
       $("labForm").addEventListener("submit", function (e) {
         e.preventDefault();
@@ -1021,10 +1041,10 @@
     if (sheetsOk) loadSheetSection();
     if (rank() >= 3) {
       req("/api/v1/perm?lab=" + LAB)
-        .then(function (d) { renderPerm(d.menus, d.rows); })
+        .then(function (d) { if (!stale(seq)) renderPerm(d.menus, d.rows); })
         .catch(function (e) {
-          var b = $("permBox");
-          if (b) b.innerHTML = '<p class="note bad">불러오지 못했습니다 (' + esc(e.code || e.message) + ")</p>";
+          if (stale(seq)) return;
+          setHtml("permBox", '<p class="note bad">불러오지 못했습니다 (' + esc(e.code || e.message) + ")</p>");
         });
     }
   };
@@ -1098,14 +1118,15 @@
   function renderTeam(d) {
     var canAssign = d.myRank >= 2, canManage = d.myRank >= 3;
     if (canAssign) {
-      $("assignBox").innerHTML =
+      setHtml("assignBox",
         '<form class="assign" id="assignForm">' +
         '<input type="email" id="asEmail" required placeholder="이메일 (contextBio 계정)">' +
         '<select id="asRole"><option value="MEMBER">팀원 (연구원)</option>' +
         '<option value="LAB_MANAGER">팀 운영자 (랩매니저)</option>' +
         (d.myRank >= 3 ? '<option value="PI">팀 운영자 (연구책임자)</option>' : "") +
         '</select><button type="submit" class="btn solid">배정</button>' +
-        '<span style="font-size:11.5px;color:var(--muted)">기존 계정은 즉시 배정, 처음이면 초대 링크가 만들어집니다</span></form>';
+        '<span style="font-size:11.5px;color:var(--muted)">기존 계정은 즉시 배정, 처음이면 초대 링크가 만들어집니다</span></form>');
+      if (!$("assignForm")) return;
       $("assignForm").addEventListener("submit", function (e) {
         e.preventDefault();
         teamPost({ action: "assign", email: $("asEmail").value, role: $("asRole").value })
@@ -1117,7 +1138,7 @@
           }).catch(function (e2) { alert("실패: " + (e2.code || e2.message)); });
       });
     } else {
-      $("assignBox").innerHTML = '<p class="note">배정 변경은 팀 운영자만 할 수 있습니다.</p>';
+      setHtml("assignBox", '<p class="note">배정 변경은 팀 운영자만 할 수 있습니다.</p>');
     }
 
     var cols = [
@@ -1130,7 +1151,7 @@
       return '<button class="btn sm" data-act="role" data-id="' + r.membershipId + '" data-role="' + esc(r.role) + '">역할 변경</button> ' +
         '<button class="btn sm danger" data-act="rm" data-id="' + r.membershipId + '">제외</button>';
     } });
-    $("t1").innerHTML = table(cols, d.members, "배정된 구성원이 없습니다");
+    if (!setHtml("t1", table(cols, d.members, "배정된 팀원이 없습니다"))) return;
 
     if (canManage) $("t1").addEventListener("click", function (e) {
       var b = e.target.closest ? e.target.closest("button[data-act]") : null;
@@ -1156,7 +1177,8 @@
     });
 
     if (d.invites.length && canAssign) {
-      $("inviteSec").style.display = "block";
+      var sec = $("inviteSec"); if (!sec) return;
+      sec.style.display = "block";
       $("t2").innerHTML = table([
         { h: "이메일", k: "email" },
         { h: "구분", f: function (r) { return roleBadge(r.role); } },
@@ -1240,7 +1262,7 @@
       e.preventDefault();
       var abs = Array.prototype.slice.call(ab.parentNode.querySelectorAll("button"));
       abs.forEach(function (b) { b.disabled = true; });
-      $("allLog").innerHTML = '<p class="note">실행 중… (항목이 많으면 시간이 걸립니다)</p>';
+      setHtml("allLog", '<p class="note">실행 중… (항목이 많으면 시간이 걸립니다)</p>');
       req("/api/v1/sheet?lab=" + LAB, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1248,7 +1270,7 @@
       }).then(function () { CACHE = {}; route(); })
         .catch(function (err) {
           abs.forEach(function (b) { b.disabled = false; });
-          $("allLog").innerHTML = '<p class="note bad">실패: ' + esc(err.code || err.message) + "</p>";
+          setHtml("allLog", '<p class="note bad">실패: ' + esc(err.code || err.message) + "</p>");
         });
       return;
     }
@@ -1329,6 +1351,7 @@
   }
   function route() {
     if (!ME) return;
+    RENDER_SEQ++;
     renderNav();
     var h = location.hash || "#/";
     if (h === "#/team") { location.hash = "#/settings"; return; }   // 구성원 → 설정으로 옮김
