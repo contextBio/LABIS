@@ -22,16 +22,92 @@ function num(v: string | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function toObjects(rows: string[][]): Row[] {
-  if (rows.length < 2) return [];
-  const headers = rows[0].map((h) => h.trim());
-  return rows.slice(1).map((r) => {
-    const o: Row = {};
-    headers.forEach((h, i) => {
-      o[h] = (r[i] ?? "").trim();
-    });
-    return o;
+/** 'YYYY-MM-DD' 로 맞춘다 — 실제 시트는 2026/1/2, 2026.1.2, 2026년 1월 2일 같은 표기를 쓴다 */
+function ymd(v: string): string {
+  const t = v.trim();
+  if (!t) return "";
+  const m = t.match(/^(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})/);
+  return m ? `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}` : t;
+}
+
+/** 열 이름 표기 흔들림 흡수 — 괄호 주석과 공백을 뗀다 ('종류 (연차/반차)' → '종류') */
+function normHeader(h: string): string {
+  return h.replace(/\([^)]*\)/g, "").replace(/\s+/g, "").trim();
+}
+
+/** 시트마다 다르게 쓰는 열 이름 → LABIS 표준 열 이름 */
+const ALIASES: Partial<Record<TabName, Record<string, string>>> = {
+  휴가: {
+    성명: "이름", 종류: "구분", 휴가구분: "구분", 휴가종류: "구분",
+    연차시작일: "시작일", 시작: "시작일", 사용시작일: "시작일",
+    연차종료일: "종료일", 종료: "종료일", 사용종료일: "종료일",
+    사용연차일수: "일수", 사용일수: "일수", 연차일수: "일수",
+    비고: "사유", 승인상태: "상태",
+  },
+  인원: { 성명: "이름", 전화번호: "연락처", 휴대전화: "연락처", 직위: "직급" },
+  과제: { 과제코드: "과제번호", 연구과제명: "과제명", 주관기관: "발주처", 책임자: "연구책임자" },
+  구매: { 구입일: "일자", 구매일: "일자", 물품명: "품목", 업체: "구입처", 구매금액: "금액" },
+  논문: { 논문제목: "제목", 게재지: "저널", 학술지: "저널", 게재연도: "연도" },
+};
+
+/** 값을 날짜로 다듬을 열 */
+const DATE_HEADERS = new Set([
+  "일자", "시작일", "종료일", "기한", "집행일", "수령일", "계약일",
+  "구입일", "최근점검일", "다음점검일", "입사일",
+]);
+
+/** 헤더가 1행이 아닐 수 있다 (제목 줄이 위에 있는 시트가 흔하다) — 위에서 이만큼 훑는다 */
+const HEADER_SCAN = 6;
+
+/** 시트 한 줄을 표준 열 이름으로 옮긴다. 같은 이름이 두 번 나오면 앞엣것을 살린다. */
+function mapHeaders(tab: TabName, want: string[], raw: string[]): string[] {
+  const alias = ALIASES[tab] ?? {};
+  const wanted = new Set(want);
+  const taken = new Set<string>();
+  return raw.map((h) => {
+    const n = normHeader(h);
+    const key = wanted.has(n) ? n : (alias[n] ?? n);
+    if (!wanted.has(key)) return "";        // 우리가 안 쓰는 열
+    if (taken.has(key)) return "";          // 이미 채운 열 (예: '이름' 뒤에 나오는 '성명')
+    taken.add(key);
+    return key;
   });
+}
+
+type Parsed = {
+  rows: Row[];
+  /** 헤더로 고른 줄 번호 (1부터) */
+  headerRow: number;
+  /** 그 줄의 원래 열 이름 */
+  rawHeaders: string[];
+  /** 표준 열 이름과 맞은 개수 */
+  matched: number;
+};
+
+/** 헤더 줄을 찾아 표준 열 이름으로 읽는다 */
+function parseSheet(tab: TabName, want: string[], rows: string[][]): Parsed {
+  let best = { idx: 0, mapped: [] as string[], score: -1 };
+  for (let i = 0; i < Math.min(HEADER_SCAN, rows.length); i++) {
+    const mapped = mapHeaders(tab, want, rows[i] ?? []);
+    const score = mapped.filter(Boolean).length;
+    if (score > best.score) best = { idx: i, mapped, score };
+  }
+  const out: Row[] = [];
+  for (const r of rows.slice(best.idx + 1)) {
+    const o: Row = {};
+    best.mapped.forEach((h, i) => {
+      if (!h) return;
+      const v = (r[i] ?? "").trim();
+      o[h] = DATE_HEADERS.has(h) ? ymd(v) : v;
+    });
+    if (Object.values(o).some((v) => v !== "")) out.push(o);
+  }
+  return {
+    rows: out,
+    headerRow: best.idx + 1,
+    rawHeaders: (rows[best.idx] ?? []).map((h) => h.trim()).filter(Boolean),
+    matched: best.score,
+  };
 }
 
 /** 랩 구성원 이름 → userId 매핑 */
@@ -566,12 +642,16 @@ export const SPECS: Record<TabName, EntitySpec> = {
     importRows: async (labId, rows, log) => {
       const names = await nameMap(labId);
       await prisma.leave.deleteMany({ where: { labId } });
-      let n = 0;
+      let n = 0, blank = 0;
       const misses: string[] = [];
       for (const r of rows) {
+        if (!r["이름"]) {
+          blank++;
+          continue;
+        }
         const uid = names.get(r["이름"]);
         if (!uid) {
-          if (r["이름"]) misses.push(r["이름"]);
+          misses.push(r["이름"]);
           continue;
         }
         await prisma.leave.create({
@@ -584,7 +664,14 @@ export const SPECS: Record<TabName, EntitySpec> = {
         n++;
       }
       log.push(`휴가: 전체 교체, ${n}건 입력`);
-      if (misses.length) log.push(`⚠ 명부에 없는 이름: ${[...new Set(misses)].join(", ")}`);
+      if (blank) log.push(`⚠ 휴가: 이름이 비어 있어 건너뛴 행 ${blank}개`);
+      if (misses.length) {
+        log.push(
+          `⚠ 휴가: 명부에 없는 이름 ${new Set(misses).size}명 — ${[...new Set(misses)].slice(0, 12).join(", ")}` +
+            (new Set(misses).size > 12 ? " …" : "") +
+            " (인사관리에서 팀원으로 추가해야 반영됩니다)"
+        );
+      }
     },
   },
 };
@@ -635,8 +722,18 @@ export async function importTab(labId: number, tab: TabName): Promise<string[]> 
     log.push(`${tab}: '${sheetTitle}' 시트에 데이터가 없습니다 (건너뜀)`);
     return log;
   }
-  log.push(`${tab}: '${sheetTitle}' 시트에서 ${rows.length - 1}행 읽음`);
-  await spec.importRows(labId, toObjects(rows), log);
+  const parsed = parseSheet(tab, spec.headers, rows);
+  log.push(
+    `${tab}: '${sheetTitle}' 시트 ${parsed.headerRow}행을 헤더로 읽음 — 데이터 ${parsed.rows.length}행`
+  );
+  if (parsed.matched === 0) {
+    log.push(
+      `⚠ ${tab}: 열 이름이 하나도 맞지 않습니다. 시트 헤더=[${parsed.rawHeaders.join(", ")}] · ` +
+        `필요한 열=[${spec.headers.join(", ")}]`
+    );
+    return log;
+  }
+  await spec.importRows(labId, parsed.rows, log);
   return log;
 }
 
