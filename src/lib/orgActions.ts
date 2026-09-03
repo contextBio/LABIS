@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "./prisma";
 import { requireDeptAdmin, requireLab, audit } from "./guard";
+import { labSlots } from "./labLimit";
 import type { LabRole } from "@prisma/client";
 
 function s(fd: FormData, key: string): string {
@@ -19,6 +20,7 @@ export async function createLab(fd: FormData) {
   const admin = await requireDeptAdmin();
   const name = s(fd, "name");
   if (!name) return;
+  if ((await labSlots()).full) return;   // 상한 — 화면에서도 폼을 감추지만 여기서 막는다
   const lab = await prisma.lab.create({
     data: { name, piName: s(fd, "pi_name"), room: s(fd, "room") },
   });

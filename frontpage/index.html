@@ -998,7 +998,7 @@
       (dept ? "<h2>연구실</h2>" +
         '<p class="note" style="margin-top:0">연구실 추가와 상태 변경은 학과관리자만 할 수 있습니다. ' +
         "쓰지 않는 연구실은 <b>폐쇄</b>로 바꾸세요 — 자료는 그대로 남습니다.</p>" +
-        '<div id="labBox">불러오는 중…</div>' +
+        '<div id="labBox">불러오는 중…</div><p class="note" id="labSlots"></p>' +
         '<form class="assign" id="labForm">' +
         '<input id="lbName" required placeholder="연구실명 *">' +
         '<input id="lbPi" placeholder="PI 이름">' +
@@ -1028,7 +1028,7 @@
       .catch(function (e) { if (!stale(seq)) showErr(e); });
     if (dept) {
       req("/api/v1/labs").then(function (d) {
-        if (!stale(seq)) renderLabs(d.labs);
+        if (!stale(seq)) renderLabs(d.labs, d.slots);
       }).catch(function (e) {
         if (stale(seq)) return;
         setHtml("labBox", '<p class="note bad">불러오지 못했습니다 (' + esc(e.code || e.message) + ")</p>");
@@ -1055,7 +1055,7 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }).then(function (d) {
-      renderLabs(d.labs);
+      renderLabs(d.labs, d.slots);
       var f = $("labForm");
       if (f) { $("lbName").value = ""; $("lbPi").value = ""; $("lbRoom").value = ""; }
       // 연구실 목록이 바뀌었으니 랩 전환기도 새로 받는다
@@ -1076,7 +1076,16 @@
     }).catch(function (err) { alert("실패: " + (err.code || err.message)); });
   }
 
-  function renderLabs(labs) {
+  function renderLabs(labs, slots) {
+    // 상한에 닿으면 추가 폼을 감춘다 (서버도 막지만 눌러 볼 이유가 없다)
+    var form = $("labForm");
+    if (form && slots) {
+      form.style.display = slots.full ? "none" : "";
+      setHtml("labSlots", slots.full
+        ? '<span style="color:var(--accent)">연구실은 ' + slots.max +
+          "개까지만 만들 수 있습니다. 쓰지 않는 연구실을 '폐쇄'로 바꾸면 자리가 납니다.</span>"
+        : "연구실 " + slots.used + "/" + slots.max + "개 사용 중 (폐쇄한 것은 세지 않습니다)");
+    }
     var box = $("labBox"); if (!box) return;
     box.innerHTML = table([
       { h: "연구실명", k: "name" }, { h: "PI", k: "piName", cls: "dim" },
@@ -1460,9 +1469,11 @@
           try { localStorage.setItem(LAB_KEY, String(r.labId)); } catch (_) {}
           return enterApp(token, r.labId);
         }).catch(function (err) {
-          if (err && err.code === "name_taken") {
-            throw Object.assign(new Error("이미 있는 연구실 이름입니다"), { code: "" });
-          }
+          var msg = err && err.code === "name_taken" ? "이미 있는 연구실 이름입니다"
+            : err && err.code === "lab_limit"
+              ? "연구실은 5개까지만 만들 수 있습니다 — 관리자에게 문의하세요"
+              : "";
+          if (msg) throw Object.assign(new Error(msg), { code: "" });
           throw err;
         });
       });

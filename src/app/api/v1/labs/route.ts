@@ -4,6 +4,8 @@
  *   POST /api/v1/labs  {action:"create", name, piName, room}
  *   POST /api/v1/labs  {action:"status", id, status}
  *
+ * 연구실은 최대 5개(labLimit.MAX_LABS) — 폐쇄된 것은 세지 않는다.
+ *
  * 연구실 삭제는 두지 않는다 — 쓰지 않는 연구실은 status="폐쇄"로 남긴다.
  *
  * 공개 목록(/api/labs, 이름·id 만)과 달리 이쪽은 인증이 필요하다.
@@ -12,6 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { apiUser, withCors, corsPreflight } from "@/lib/apiGuard";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/guard";
+import { labSlots, MAX_LABS, LAB_LIMIT_MESSAGE } from "@/lib/labLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +37,10 @@ export async function GET(req: NextRequest) {
   if (!user.isDeptAdmin) {
     return withCors(req, NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }));
   }
-  return withCors(req, NextResponse.json({ ok: true, labs: await labList() }));
+  return withCors(
+    req,
+    NextResponse.json({ ok: true, labs: await labList(), slots: await labSlots() })
+  );
 }
 
 export async function POST(req: NextRequest) {
@@ -53,6 +59,7 @@ export async function POST(req: NextRequest) {
   if (body.action === "create") {
     const name = String(body.name ?? "").trim();
     if (!name) return fail("name_required");
+    if ((await labSlots()).full) return fail("lab_limit");
     if (await prisma.lab.findUnique({ where: { name } })) return fail("name_taken");
     const lab = await prisma.lab.create({
       data: { name, piName: String(body.piName ?? "").trim(), room: String(body.room ?? "").trim() },
@@ -66,7 +73,10 @@ export async function POST(req: NextRequest) {
   } else {
     return fail("unknown_action");
   }
-  return withCors(req, NextResponse.json({ ok: true, labs: await labList() }));
+  return withCors(
+    req,
+    NextResponse.json({ ok: true, labs: await labList(), slots: await labSlots() })
+  );
 }
 
 export function OPTIONS(req: NextRequest) {

@@ -7,6 +7,7 @@ import {
 import { saveMenuPermissions } from "@/lib/permActions";
 import { labMenuMatrix, LEVEL_LABEL } from "@/lib/perm";
 import { ADJUSTABLE_MENUS } from "@/lib/menus";
+import { MAX_LABS, LAB_LIMIT_MESSAGE } from "@/lib/labLimit";
 import { SheetSyncSection } from "@/components/SheetSyncSection";
 import { Badge, PageHeader, Section } from "@/components/ui";
 
@@ -43,6 +44,9 @@ export default async function AdminSettingsPage() {
     isPI ? labMenuMatrix(ctx.labId) : Promise.resolve([]),
   ]);
   const appUrl = process.env.APP_URL || "http://localhost:3100";
+  // 상한은 운영·휴면만 센다 — 폐쇄가 자리를 비우는 유일한 길이다
+  const usedSlots = labs.filter((l) => l.status !== "폐쇄").length;
+  const labsFull = usedSlots >= MAX_LABS;
 
   return (
     <div>
@@ -53,7 +57,7 @@ export default async function AdminSettingsPage() {
 
       {/* ── 1. 연구실 ── */}
       {isDeptAdmin && (
-        <Section title={`연구실 (${labs.length}개)`}>
+        <Section title={`연구실 (${usedSlots}/${MAX_LABS}개 사용)`}>
           <table className="tbl mb-4">
             <thead>
               <tr><th>연구실명</th><th>PI</th><th>호실</th><th>구성원</th><th>상태</th></tr>
@@ -82,15 +86,20 @@ export default async function AdminSettingsPage() {
               )}
             </tbody>
           </table>
-          <form action={createLab} className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <input name="name" required placeholder="연구실명 *" className="inp" />
-            <input name="pi_name" placeholder="PI 이름" className="inp" />
-            <input name="room" placeholder="호실" className="inp" />
-            <button className="btn justify-center">연구실 추가</button>
-          </form>
+          {labsFull ? (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">{LAB_LIMIT_MESSAGE}</p>
+          ) : (
+            <form action={createLab} className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <input name="name" required placeholder="연구실명 *" className="inp" />
+              <input name="pi_name" placeholder="PI 이름" className="inp" />
+              <input name="room" placeholder="호실" className="inp" />
+              <button className="btn justify-center">연구실 추가</button>
+            </form>
+          )}
           <p className="mt-2 text-xs text-slate-400">
-            연구실 추가와 상태 변경은 학과관리자만 할 수 있습니다. 쓰지 않는 연구실은
-            <b> 폐쇄</b>로 바꾸세요 — 자료는 그대로 남습니다 (삭제 기능은 두지 않습니다).
+            연구실은 최대 {MAX_LABS}개입니다 (폐쇄한 것은 세지 않습니다). 추가와 상태 변경은
+            학과관리자만 할 수 있습니다. 쓰지 않는 연구실은 <b>폐쇄</b>로 바꾸세요 — 자료는
+            그대로 남습니다 (삭제 기능은 두지 않습니다).
           </p>
         </Section>
       )}

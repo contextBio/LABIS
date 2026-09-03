@@ -11,6 +11,7 @@ import { verifyContextBioTokenCached, mayUseLabis } from "@/lib/contextbio";
 import { withCors, corsPreflight } from "@/lib/apiGuard";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/guard";
+import { labSlots } from "@/lib/labLimit";
 
 function fail(req: NextRequest, status: number, error: string) {
   return withCors(req, NextResponse.json({ ok: false, error }, { status }));
@@ -28,6 +29,7 @@ export async function POST(req: NextRequest) {
   const name = String(body.name ?? "").trim();
   const room = String(body.room ?? "").trim();
   if (!name || name.length > 60) return fail(req, 400, "name_invalid");
+  if ((await labSlots()).full) return fail(req, 400, "lab_limit");
 
   let user = await prisma.user.findUnique({ where: { email: ident.email } });
   if (!user) {
