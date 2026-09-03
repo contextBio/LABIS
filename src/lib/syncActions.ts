@@ -2,62 +2,64 @@
 
 import { revalidatePath } from "next/cache";
 import { setLabSetting, extractSpreadsheetId } from "./google";
-import { exportAll, importAll, TABS, type TabName } from "./sheetSync";
+import { TABS, type TabName } from "./sheetSync";
+import {
+  isItemTab, importItemSheet, saveItemSheet as saveItemSheetFor,
+  runImportAll, runExportAll,
+} from "./sheetItems";
 import { requireLab, audit } from "./guard";
 
-function stamp(lines: string[]): string {
-  const now = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
-  return JSON.stringify({ at: now, lines });
+/** 항목별 입력창이 어느 메뉴에서 제출됐는지 — 그 경로만 재검증한다. */
+const SAFE_PATH = /^\/[A-Za-z0-9/_-]*$/;
+
+function revalidateFrom(fd: FormData) {
+  const from = String(fd.get("from") ?? "");
+  if (from && from !== "/admin/settings" && SAFE_PATH.test(from)) revalidatePath(from);
+  revalidatePath("/admin/settings");
+  revalidatePath("/");
 }
+
+// ---------- 항목별 시트 ----------
+
+/** 시트 주소를 저장하고, 곧바로 그 항목을 DB로 가져온다. */
+export async function saveItemSheet(fd: FormData) {
+  const ctx = await requireLab("LAB_MANAGER");
+  const tab = String(fd.get("tab") ?? "");
+  if (!isItemTab(tab)) return;
+  await saveItemSheetFor(ctx.labId, ctx.user.id, tab, String(fd.get("url") ?? ""));
+  revalidateFrom(fd);
+}
+
+/** 이미 연결된 시트를 다시 읽어 반영한다. */
+export async function runItemImport(fd: FormData) {
+  const ctx = await requireLab("LAB_MANAGER");
+  const tab = String(fd.get("tab") ?? "");
+  if (!isItemTab(tab)) return;
+  await importItemSheet(ctx.labId, ctx.user.id, tab);
+  revalidateFrom(fd);
+}
+
+// ---------- 랩 통합 스프레드시트 (항목별 주소가 없을 때의 기본값) ----------
 
 export async function saveSpreadsheet(fd: FormData) {
   const ctx = await requireLab("LAB_MANAGER");
   const id = extractSpreadsheetId(String(fd.get("spreadsheet") ?? ""));
   await setLabSetting(ctx.labId, "spreadsheet_id", id);
-  await setLabSetting(
-    ctx.labId,
-    "sync_log",
-    stamp([id ? `스프레드시트 연결: ${id}` : "스프레드시트 연결 해제"])
-  );
   await audit(ctx.user.id, ctx.labId, "sync.spreadsheet", "setting", "spreadsheet_id", { id });
-  revalidatePath("/sync");
+  revalidatePath("/admin/settings");
 }
 
 export async function runExport() {
   const ctx = await requireLab("LAB_MANAGER");
-  try {
-    const log = await exportAll(ctx.labId);
-    await setLabSetting(ctx.labId, "sync_log", stamp(["✅ 내보내기 (LABIS → 구글시트) 완료", ...log]));
-    await audit(ctx.user.id, ctx.labId, "sync.export", "sheet", "", { lines: log.length });
-  } catch (e) {
-    await setLabSetting(
-      ctx.labId,
-      "sync_log",
-      stamp([`❌ 내보내기 실패: ${e instanceof Error ? e.message : String(e)}`])
-    );
-  }
-  revalidatePath("/sync");
+  await runExportAll(ctx.labId, ctx.user.id);
+  revalidatePath("/admin/settings");
 }
 
 export async function runImport(fd: FormData) {
   const ctx = await requireLab("LAB_MANAGER");
   const tab = String(fd.get("tab") ?? "");
   const tabs = (TABS as readonly string[]).includes(tab) ? [tab as TabName] : undefined;
-  try {
-    const log = await importAll(ctx.labId, tabs);
-    await setLabSetting(
-      ctx.labId,
-      "sync_log",
-      stamp([`✅ 가져오기 (구글시트 → LABIS) 완료${tabs ? ` — ${tab}` : ""}`, ...log])
-    );
-    await audit(ctx.user.id, ctx.labId, "sync.import", "sheet", tab || "all");
-  } catch (e) {
-    await setLabSetting(
-      ctx.labId,
-      "sync_log",
-      stamp([`❌ 가져오기 실패: ${e instanceof Error ? e.message : String(e)}`])
-    );
-  }
-  revalidatePath("/sync");
+  await runImportAll(ctx.labId, ctx.user.id, tabs);
+  revalidatePath("/admin/settings");
   revalidatePath("/");
 }

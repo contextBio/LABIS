@@ -24,7 +24,7 @@ export async function setLabSetting(labId: number, key: string, value: string) {
 
 // ---------- 서비스 계정 ----------
 
-type ServiceAccount = { client_email: string; private_key: string };
+export type ServiceAccount = { client_email: string; private_key: string };
 
 export function loadServiceAccount(): ServiceAccount | null {
   const inline = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
@@ -185,4 +185,109 @@ export function parseCsv(text: string): string[][] {
 export function extractSpreadsheetId(input: string): string {
   const m = input.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
   return m ? m[1] : input.trim();
+}
+
+// ---------- 항목별 시트 참조 (URL → 스프레드시트 ID + 워크시트 gid) ----------
+
+/** 항목마다 따로 붙이는 시트 주소. gid 가 있으면 워크시트까지 특정한다. */
+export type SheetRef = { id: string; gid: string | null };
+
+export function parseSheetRef(input: string): SheetRef {
+  const s = (input ?? "").trim();
+  if (!s) return { id: "", gid: null };
+  const m = s.match(/[#?&]gid=([0-9]+)/);
+  return { id: extractSpreadsheetId(s), gid: m ? m[1] : null };
+}
+
+export function sheetRefUrl(ref: SheetRef): string {
+  return `https://docs.google.com/spreadsheets/d/${ref.id}${ref.gid ? `/edit#gid=${ref.gid}` : ""}`;
+}
+
+export type SheetInfo = { gid: string; title: string };
+
+export async function listSheets(sa: ServiceAccount, spreadsheetId: string): Promise<SheetInfo[]> {
+  const meta = await api(
+    sa,
+    "GET",
+    `${SHEETS_API}/${spreadsheetId}?fields=sheets.properties(sheetId,title)`
+  );
+  return ((meta.sheets as { properties: { sheetId: number; title: string } }[]) ?? []).map((s) => ({
+    gid: String(s.properties.sheetId),
+    title: s.properties.title,
+  }));
+}
+
+/** 공개 시트 CSV — 워크시트를 gid 또는 탭 이름으로 고르고, 둘 다 없으면 첫 시트. */
+export async function readPublicSheet(
+  spreadsheetId: string,
+  opts: { tab?: string; gid?: string | null } = {}
+): Promise<string[][]> {
+  const qs = opts.gid
+    ? `&gid=${encodeURIComponent(opts.gid)}`
+    : opts.tab
+      ? `&sheet=${encodeURIComponent(opts.tab)}`
+      : "";
+  const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv${qs}`;
+  const res = await fetch(url, { redirect: "follow", cache: "no-store" });
+  const text = await res.text();
+  if (!res.ok || text.trimStart().startsWith("<")) {
+    throw new Error(
+      "공개 시트를 읽을 수 없습니다. 시트가 '링크가 있는 모든 사용자'에게 공유되어 있는지 확인하세요."
+    );
+  }
+  return parseCsv(text);
+}
+
+/**
+ * 워크시트 하나를 고른다.
+ * 1) URL 에 gid 가 있으면 그 워크시트  2) 없으면 항목 이름과 같은 탭  3) 시트가 하나뿐이면 그 시트
+ */
+function pickSheet(sheets: SheetInfo[], ref: SheetRef, preferTitle: string): SheetInfo | null {
+  if (ref.gid) {
+    const byGid = sheets.find((s) => s.gid === ref.gid);
+    if (byGid) return byGid;
+  }
+  const byTitle = sheets.find((s) => s.title === preferTitle);
+  if (byTitle) return byTitle;
+  return sheets.length === 1 ? sheets[0] : null;
+}
+
+/** 시트 주소가 가리키는 워크시트를 읽는다. 서비스 계정이 없으면 공개 CSV 로 대체. */
+export async function readSheetRows(
+  sa: ServiceAccount | null,
+  ref: SheetRef,
+  preferTitle: string
+): Promise<{ rows: string[][]; sheetTitle: string }> {
+  if (sa) {
+    const sheets = await listSheets(sa, ref.id);
+    if (sheets.length === 0) throw new Error("워크시트가 없는 스프레드시트입니다.");
+    const picked = pickSheet(sheets, ref, preferTitle);
+    if (!picked) {
+      throw new Error(
+        `'${preferTitle}' 워크시트를 찾을 수 없습니다. 시트 탭 이름을 '${preferTitle}' 로 하거나, 주소 끝의 #gid= 까지 포함해 붙여넣으세요.`
+      );
+    }
+    return { rows: await readTab(sa, ref.id, picked.title), sheetTitle: picked.title };
+  }
+  if (ref.gid) {
+    return { rows: await readPublicSheet(ref.id, { gid: ref.gid }), sheetTitle: `gid=${ref.gid}` };
+  }
+  try {
+    return { rows: await readPublicSheet(ref.id, { tab: preferTitle }), sheetTitle: preferTitle };
+  } catch {
+    return { rows: await readPublicSheet(ref.id, {}), sheetTitle: "첫 번째 시트" };
+  }
+}
+
+/** 시트 주소가 가리키는 워크시트에 쓴다 (없으면 preferTitle 로 탭 생성). */
+export async function writeSheetRows(
+  sa: ServiceAccount,
+  ref: SheetRef,
+  preferTitle: string,
+  rows: (string | number | null)[][]
+): Promise<string> {
+  const sheets = await listSheets(sa, ref.id);
+  const title = pickSheet(sheets, ref, preferTitle)?.title ?? preferTitle;
+  await writeTab(sa, ref.id, title, rows);
+  return title;
 }

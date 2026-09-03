@@ -14,54 +14,58 @@ enum LabRole {
 }
 
 model User {
-  id           String       @id @default(cuid())
-  email        String       @unique
-  name         String
-  image        String?
-  passwordHash String?      @map("password_hash")
-  username     String?      @unique // c1 서버 리눅스 계정명 (MUSE 공동 로그인용)
-  isDeptAdmin  Boolean      @default(false) @map("is_dept_admin")
+  id              String            @id @default(cuid())
+  email           String            @unique
+  name            String
+  image           String?
+  passwordHash    String?           @map("password_hash")
+  username        String?           @unique // c1 서버 리눅스 계정명 (MUSE 공동 로그인용)
+  isDeptAdmin     Boolean           @default(false) @map("is_dept_admin")
   // 인사 프로필
-  position     String       @default("연구원")
-  phone        String       @default("")
-  hireDate     String       @default("") @map("hire_date")
-  workStatus   String       @default("재직") @map("work_status")
-  createdAt    DateTime     @default(now()) @map("created_at")
-  memberships  Membership[]
-  invitesSent  Invitation[] @relation("InvitedBy")
-  auditLogs    AuditLog[]
-  piProjects     Project[]       @relation("ProjectPI")
-  projectMembers ProjectMember[]
-  samples        Sample[]
-  experiments    Experiment[]
-  instruments    Instrument[]
-  leaves         Leave[]
-  purchases      Purchase[]
+  position        String            @default("연구원")
+  phone           String            @default("")
+  hireDate        String            @default("") @map("hire_date")
+  workStatus      String            @default("재직") @map("work_status")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  memberships     Membership[]
+  invitesSent     Invitation[]      @relation("InvitedBy")
+  auditLogs       AuditLog[]
+  piProjects      Project[]         @relation("ProjectPI")
+  projectMembers  ProjectMember[]
+  ledResearch     ResearchProject[] @relation("ResearchLeader")
+  menuPermissions MenuPermission[]
+  samples         Sample[]
+  experiments     Experiment[]
+  instruments     Instrument[]
+  leaves          Leave[]
+  purchases       Purchase[]
 
   @@map("users")
 }
 
 model Lab {
-  id          Int          @id @default(autoincrement())
-  name        String       @unique
-  piName      String       @default("") @map("pi_name")
-  room        String       @default("")
-  status      String       @default("운영")
-  createdAt   DateTime     @default(now()) @map("created_at")
-  memberships Membership[]
-  invitations Invitation[]
-  auditLogs   AuditLog[]
-  settings    Setting[]
-  projects    Project[]
-  samples     Sample[]
-  experiments Experiment[]
-  instruments Instrument[]
-  leaves      Leave[]
-  publications  Publication[]
-  patents       Patent[]
-  techTransfers TechTransfer[]
-  purchases     Purchase[]
-  fundIncomes   FundIncome[]
+  id               Int               @id @default(autoincrement())
+  name             String            @unique
+  piName           String            @default("") @map("pi_name")
+  room             String            @default("")
+  status           String            @default("운영")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  memberships      Membership[]
+  invitations      Invitation[]
+  auditLogs        AuditLog[]
+  settings         Setting[]
+  projects         Project[]
+  researchProjects ResearchProject[]
+  menuPermissions  MenuPermission[]
+  samples          Sample[]
+  experiments      Experiment[]
+  instruments      Instrument[]
+  leaves           Leave[]
+  publications     Publication[]
+  patents          Patent[]
+  techTransfers    TechTransfer[]
+  purchases        Purchase[]
+  fundIncomes      FundIncome[]
 
   @@map("labs")
 }
@@ -115,34 +119,74 @@ model AuditLog {
 // 날짜는 UI(date input)와 시트 연동에 맞춰 'YYYY-MM-DD' 문자열로 저장한다.
 
 model Project {
-  id          Int             @id @default(autoincrement())
-  lab         Lab             @relation(fields: [labId], references: [id], onDelete: Cascade)
-  labId       Int             @map("lab_id")
-  code        String
-  title       String
-  sponsor     String          @default("")
-  program     String          @default("")
-  pi          User?           @relation("ProjectPI", fields: [piId], references: [id], onDelete: SetNull)
-  piId        String?         @map("pi_id")
-  startDate   String          @default("") @map("start_date")
-  endDate     String          @default("") @map("end_date")
-  totalBudget Int             @default(0) @map("total_budget")
-  status      String          @default("진행")
-  memo        String          @default("")
-  createdAt   DateTime        @default(now()) @map("created_at")
-  members     ProjectMember[]
-  milestones  Milestone[]
-  budgetItems BudgetItem[]
-  samples     Sample[]
-  experiments Experiment[]
-  publications  Publication[]
-  patents       Patent[]
-  techTransfers TechTransfer[]
-  purchases     Purchase[]
-  fundIncomes   FundIncome[]
+  id               Int               @id @default(autoincrement())
+  lab              Lab               @relation(fields: [labId], references: [id], onDelete: Cascade)
+  labId            Int               @map("lab_id")
+  code             String
+  title            String
+  sponsor          String            @default("")
+  program          String            @default("")
+  pi               User?             @relation("ProjectPI", fields: [piId], references: [id], onDelete: SetNull)
+  piId             String?           @map("pi_id")
+  startDate        String            @default("") @map("start_date")
+  endDate          String            @default("") @map("end_date")
+  totalBudget      Int               @default(0) @map("total_budget")
+  status           String            @default("진행")
+  memo             String            @default("")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  members          ProjectMember[]
+  milestones       Milestone[]
+  budgetItems      BudgetItem[]
+  samples          Sample[]
+  experiments      Experiment[]
+  publications     Publication[]
+  patents          Patent[]
+  techTransfers    TechTransfer[]
+  purchases        Purchase[]
+  fundIncomes      FundIncome[]
+  researchProjects ResearchProject[]
 
   @@unique([labId, code])
   @@map("projects")
+}
+
+/// 연구 프로젝트 — 수주 과제(Project)와 별개인 랩 내부의 연구 단위.
+/// 과제가 없어도 굴러가고, 있으면 연계만 걸어 둔다.
+model ResearchProject {
+  id        Int      @id @default(autoincrement())
+  lab       Lab      @relation(fields: [labId], references: [id], onDelete: Cascade)
+  labId     Int      @map("lab_id")
+  code      String
+  title     String
+  goal      String   @default("")
+  leader    User?    @relation("ResearchLeader", fields: [leaderId], references: [id], onDelete: SetNull)
+  leaderId  String?  @map("leader_id")
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  projectId Int?     @map("project_id")
+  startDate String   @default("") @map("start_date")
+  endDate   String   @default("") @map("end_date")
+  status    String   @default("진행")
+  memo      String   @default("")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([labId, code])
+  @@map("research_projects")
+}
+
+/// 메뉴별 사용자 권한 — 팀관리자(연구책임자)가 조정한다.
+/// 행이 없으면 'edit'(기존 역할 규칙 그대로). 역할을 넘어서지는 못하고 있는 권한을
+/// 좁히기만 한다: none(차단) < view(읽기 전용) < edit(기존대로).
+model MenuPermission {
+  id     Int    @id @default(autoincrement())
+  lab    Lab    @relation(fields: [labId], references: [id], onDelete: Cascade)
+  labId  Int    @map("lab_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @map("user_id")
+  menu   String
+  level  String @default("edit")
+
+  @@unique([labId, userId, menu])
+  @@map("menu_permissions")
 }
 
 model ProjectMember {

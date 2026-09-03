@@ -1,23 +1,29 @@
 import { requireLab } from "@/lib/guard";
 import { listInstruments, listLabUsers } from "@/lib/queries";
 import { createInstrument, setInstrumentStatus, markInstrumentChecked, deleteInstrument } from "@/lib/actions";
+import { SheetSources } from "@/components/SheetSources";
 import { Badge, PageHeader, Section } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
 export default async function InstrumentsPage() {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "instruments", "view");
   const [instruments, users] = await Promise.all([
     listInstruments(ctx.labId),
     listLabUsers(ctx.labId),
   ]);
   const active = users.filter((u) => u.workStatus === "재직");
-  const canManage = ctx.role === "PI" || ctx.role === "LAB_MANAGER";
+  const canEdit = ctx.level === "edit";
+  const canManage = canEdit && (ctx.role === "PI" || ctx.role === "LAB_MANAGER");
   const today = new Date().toISOString().slice(0, 10);
 
   return (
     <div>
       <PageHeader title={`장비 관리 (LIMS) — ${ctx.labName}`} desc="장비 현황 · 점검 일정 · 관리자" />
+
+      {canManage && (
+        <SheetSources labId={ctx.labId} tabs={["장비"]} from="/lims/instruments" />
+      )}
 
       <Section title={`장비 목록 (${instruments.length}대)`}>
         <div className="overflow-x-auto">
@@ -40,17 +46,21 @@ export default async function InstrumentsPage() {
                     </td>
                     <td><Badge value={it.status} /></td>
                     <td className="whitespace-nowrap text-right">
-                      <form action={markInstrumentChecked} className="inline">
-                        <input type="hidden" name="id" value={it.id} />
-                        <button className="btn-ghost">점검 완료</button>
-                      </form>{" "}
-                      <form action={setInstrumentStatus} className="inline-flex items-center gap-1">
-                        <input type="hidden" name="id" value={it.id} />
-                        <select name="status" defaultValue={it.status} className="inp !w-auto !py-0.5 !text-xs">
-                          <option>정상</option><option>점검중</option><option>고장</option><option>폐기</option>
-                        </select>
-                        <button className="btn-ghost">변경</button>
-                      </form>
+                      {canEdit && (
+                        <>
+                          <form action={markInstrumentChecked} className="inline">
+                            <input type="hidden" name="id" value={it.id} />
+                            <button className="btn-ghost">점검 완료</button>
+                          </form>{" "}
+                          <form action={setInstrumentStatus} className="inline-flex items-center gap-1">
+                            <input type="hidden" name="id" value={it.id} />
+                            <select name="status" defaultValue={it.status} className="inp !w-auto !py-0.5 !text-xs">
+                              <option>정상</option><option>점검중</option><option>고장</option><option>폐기</option>
+                            </select>
+                            <button className="btn-ghost">변경</button>
+                          </form>
+                        </>
+                      )}
                       {canManage && (
                         <>
                           {" "}

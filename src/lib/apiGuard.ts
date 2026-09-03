@@ -11,6 +11,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyContextBioTokenCached, mayUseLabis } from "./contextbio";
 import { prisma } from "./prisma";
+import { menuLevels, atLeast, type MenuLevel } from "./perm";
+import type { MenuKey } from "./menus";
 import type { LabRole } from "@prisma/client";
 
 const ALLOWED_ORIGINS = new Set([
@@ -44,7 +46,7 @@ export type ApiUser = {
   email: string;
   name: string;
   isDeptAdmin: boolean;
-  memberships: { labId: number; labName: string; role: LabRole }[];
+  memberships: { labId: number; labName: string; labStatus: string; role: LabRole }[];
 };
 
 function fail(req: NextRequest, status: number, error: string): NextResponse {
@@ -73,6 +75,7 @@ export async function apiUser(req: NextRequest): Promise<ApiUser | NextResponse>
     memberships: user.memberships.map((mb) => ({
       labId: mb.labId,
       labName: mb.lab.name,
+      labStatus: mb.lab.status,
       role: mb.role,
     })),
   };
@@ -85,4 +88,30 @@ export function apiLab(req: NextRequest, user: ApiUser): number | NextResponse {
   const allowed = user.isDeptAdmin || user.memberships.some((m) => m.labId === labId);
   if (!allowed) return fail(req, 403, "lab_forbidden");
   return labId;
+}
+
+const RANK: Record<LabRole, number> = { MEMBER: 1, LAB_MANAGER: 2, PI: 3 };
+
+/** 랩 안에서의 권한 등급 — 1=팀원, 2=운영자(랩매니저), 3=연구책임자, 4=학과관리자. */
+export function apiRank(user: ApiUser, labId: number): number {
+  if (user.isDeptAdmin) return 4;
+  const m = user.memberships.find((x) => x.labId === labId);
+  return m ? RANK[m.role] : 0;
+}
+
+/** 팀관리자가 조정한 메뉴별 권한 — 화면 가드(requireLab)와 같은 규칙. */
+export async function apiMenuAllowed(
+  user: ApiUser,
+  labId: number,
+  menu: MenuKey,
+  need: MenuLevel
+): Promise<boolean> {
+  const m = user.memberships.find((x) => x.labId === labId);
+  const role: LabRole = m?.role ?? "PI"; // 학과관리자는 소속이 없어도 PI 로 취급
+  const levels = await menuLevels(labId, user.id, role, user.isDeptAdmin);
+  return atLeast(levels[menu], need);
+}
+
+export function menuForbidden(req: NextRequest): NextResponse {
+  return fail(req, 403, "menu_forbidden");
 }

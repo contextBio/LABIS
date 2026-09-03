@@ -8,7 +8,9 @@
      백엔드 주소의 정본은 cb-backend 메타(빌드가 채움), 인증은 통합계정 ID 토큰
      Bearer(BioWrit 모델, 쿠키 없음). 조회는 /api/v1/list·project·summary,
      등록·수정·삭제는 /api/v1/write (로그인 + 랩 소속 + op 별 역할 검증).
-     시트연동·학과관리만 "기존 화면"(c1 SSR, 토큰 릴레이 무로그인)으로 연다. -->
+     구글시트 연동은 이 화면 안에서 전부 한다(/api/v1/sheet) — 항목별 주소는 각 메뉴
+     안에서, 전체 실행·양식은 "구글시트 연동" 메뉴에서. 아직 옮기지 않은 학과관리만
+     설정 화면의 링크로 "기존 화면"(c1 SSR, 토큰 릴레이 무로그인)을 연다. -->
 <style>
   :root{
     --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --bg:#f8fafc;
@@ -110,6 +112,31 @@
   form.assign input{width:240px}
   .flash{margin:8px 0;padding:8px 12px;border-radius:8px;background:#ecfdf5;color:var(--ok);font-size:12.5px}
 
+  /* ── 항목별 구글시트 연동 ── */
+  details.sheets{background:var(--card);border:1px solid var(--line);border-radius:12px;
+                 padding:10px 14px;margin:0 0 14px}
+  details.sheets>summary{cursor:pointer;font-size:13px;font-weight:700;color:var(--ink)}
+  details.sheets .cnt{margin-left:6px;font-weight:400;font-size:11.5px;color:var(--muted)}
+  details.sheets .cnt.bad{color:var(--bad)}
+  details.sheets .sbody{margin-top:8px}
+  .srow{display:grid;grid-template-columns:78px minmax(0,1fr) auto auto auto;
+        gap:5px 8px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+  .srow:first-child{border-top:0;padding-top:2px}
+  .srow>label{font-size:12.5px;font-weight:600;color:var(--muted)}
+  .srow>input{width:100%;font-size:12.5px;padding:6px 10px}
+  .srow .open{font-size:11.5px;white-space:nowrap;min-width:0}
+  .srow .slog{grid-column:2/-1;font-size:11.5px;color:var(--muted);line-height:1.5}
+  .srow .slog.ok{color:var(--ok)}
+  .srow .slog.warn{color:var(--accent)}
+  .srow .slog.bad{color:var(--bad)}
+  .note.bad{color:var(--bad)}
+  ul.guide{margin:6px 0 0;padding-left:18px;font-size:11.5px;color:var(--muted);line-height:1.8}
+  ul.guide b{color:var(--ink)}
+  @media(max-width:760px){
+    .srow{grid-template-columns:minmax(0,1fr) auto auto}
+    .srow>label,.srow>input,.srow .slog{grid-column:1/-1}
+  }
+
   /* ── 모달 폼 ── */
   #modalWrap{position:fixed;inset:0;z-index:50;display:none;align-items:flex-start;
              justify-content:center;background:rgba(15,23,42,.45);overflow:auto;padding:40px 16px}
@@ -132,17 +159,25 @@
     <ul class="feats">
       <li>인사</li><li>과제</li><li>연구비</li><li>성과</li><li>구매</li><li>장비</li><li>LIMS</li>
     </ul>
-    <form id="enterForm">
-      <label for="labSelect">연구실 선택</label>
-      <select id="labSelect" disabled>
-        <option value="">연구실 목록을 불러오는 중…</option>
-      </select>
-      <button type="submit" class="primary">LABIS 입장</button>
-    </form>
-    <p class="hint">
-      contextBio 통합 계정으로 로그인합니다.<br>
-      접근 권한은 관리자의 초대로 부여됩니다.
-    </p>
+    <p class="hint" id="entryWait" style="font-size:13px">입장 중…</p>
+    <div id="entryPick" style="display:none">
+      <form id="enterForm">
+        <label for="labSelect">연구실 선택</label>
+        <select id="labSelect" disabled>
+          <option value="">연구실 목록을 불러오는 중…</option>
+        </select>
+        <button type="submit" class="primary">LABIS 입장</button>
+      </form>
+      <button type="button" class="btn" id="newLabBtn"
+              style="width:100%;margin-top:10px;padding:10px 12px;font-size:13.5px">
+        + 새 연구실 개설
+      </button>
+      <p class="hint">
+        contextBio 통합 계정으로 로그인합니다.<br>
+        기존 연구실 접근 권한은 관리자의 초대로 부여되고,<br>
+        새 연구실은 직접 개설할 수 있습니다 (개설자 = 팀 운영자).
+      </p>
+    </div>
   </main>
 </div>
 
@@ -190,6 +225,7 @@
   /* ── 상태값 (기존 화면과 동일) ── */
   var ST = {
     project: ["계획", "진행", "종료", "중단"],
+    research: ["계획", "진행", "완료", "보류", "중단"],
     milestone: ["예정", "진행", "완료", "지연"],
     leave: ["신청", "승인", "반려"],
     purchase: ["신청", "발주", "입고", "취소"],
@@ -224,6 +260,15 @@
     });
   }
   var TOKEN = "", ME = null, LAB = 0, CACHE = {};
+  /** 현재 화면에서 쓰기가 허용되는가 — route() 가 메뉴 권한을 보고 정한다 */
+  var VIEW_EDIT = true;
+
+  /** 팀관리자가 조정한 이 랩에서의 메뉴 권한 (설정이 없으면 edit) */
+  function mlevel(key) {
+    if (!ME || !key) return "edit";
+    var l = (ME.labs || []).find(function (x) { return x.labId === LAB; });
+    return (l && l.levels && l.levels[key]) || "edit";
+  }
   function rank() {
     if (!ME) return 0;
     var l = (ME.labs || []).find(function (x) { return x.labId === LAB; });
@@ -338,11 +383,13 @@
 
   /* ── 행 단위 조작 셀 ── */
   function statusSel(op, id, cur, opts, kinds) {
+    if (!VIEW_EDIT) return '<span class="badge">' + esc(cur || "-") + "</span>";
     return '<select data-sop="' + op + '" data-id="' + id + '" data-kinds="' + kinds.join(",") + '">' +
       opts.map(function (o) { return '<option' + (o === cur ? " selected" : "") + ">" + esc(o) + "</option>"; }).join("") +
       "</select>";
   }
   function delBtn(op, id, kinds) {
+    if (!VIEW_EDIT) return "";
     return '<button class="btn sm danger" data-del="' + op + '" data-id="' + id +
       '" data-kinds="' + kinds.join(",") + '">삭제</button>';
   }
@@ -366,16 +413,77 @@
   }
   var B = function (r, k) { return '<span class="badge">' + esc(r[k] || "-") + "</span>"; };
 
-  function head(title, desc, toolbar) {
-    return '<h1 class="pg">' + esc(title) + '</h1><p class="desc">' + esc(desc || "") + "</p>" +
-      '<div id="err"></div>' + (toolbar ? '<div class="toolbar">' + toolbar + "</div>" : "");
+  /* ── 항목별 구글시트 연동 ──
+     주소를 저장하면 그 자리에서 시트를 읽어 해당 항목 DB에 반영한다(POST /api/v1/sheet).
+     워크시트는 URL 의 #gid= > 항목 이름과 같은 탭 > 시트가 하나뿐이면 그 시트 순으로 고른다. */
+  var SHEETS_OPEN = false;
+
+  function logTone(log) {
+    if (!log) return "";
+    var t = log.lines.join(" ");
+    if (t.indexOf("❌") >= 0) return " bad";
+    if (t.indexOf("⚠") >= 0) return " warn";
+    return " ok";
+  }
+  function sheetShell(inner, open) {
+    return '<details class="sheets"' + (open ? " open" : "") + ">" + inner + "</details>";
+  }
+  function sheetSummary(note, bad) {
+    return "<summary>📊 구글시트 연동" +
+      '<span class="cnt' + (bad ? " bad" : "") + '">' + esc(note) + "</span></summary>";
+  }
+  function sheetRowHtml(r) {
+    var href = "https://docs.google.com/spreadsheets/d/" + esc(r.id) + (r.gid ? "/edit#gid=" + esc(r.gid) : "");
+    return '<div class="srow" data-tab="' + esc(r.tab) + '">' +
+      "<label>" + esc(r.tab) + "</label>" +
+      '<input type="url" value="' + esc(r.url || "") +
+        '" placeholder="구글시트 주소 붙여넣기 — …/spreadsheets/d/…#gid=0">' +
+      '<button class="btn solid sm" data-act="save">저장 · 가져오기</button>' +
+      '<button class="btn sm" data-act="import"' + (r.id ? "" : " disabled") + ">↻ 다시</button>" +
+      '<span class="open">' + (r.id ? '<a href="' + href + '" target="_blank" rel="noreferrer">시트 열기 ↗</a>' : "") + "</span>" +
+      '<div class="slog' + logTone(r.log) + '">' +
+        (r.log ? esc(r.log.at) + " · " + esc(r.log.lines.join(" / ")) : "") + "</div></div>";
+  }
+  /** plain = 전용 화면(구글시트 연동 메뉴) — 접이식 껍데기 없이 목록만 편다 */
+  function renderSheets(rows, plain) {
+    var box = $("sheetBox"); if (!box) return;
+    var body = '<div class="sbody">' + rows.map(sheetRowHtml).join("") + "</div>";
+    if (plain) { box.innerHTML = body; return; }
+    var linked = rows.filter(function (r) { return !!r.id; }).length;
+    box.innerHTML = sheetShell(
+      sheetSummary(linked ? linked + "/" + rows.length + "개 항목 연결됨"
+                          : "시트 주소를 넣으면 그 자리에서 가져옵니다") + body, SHEETS_OPEN);
+  }
+  function mountSheets(tabs) {
+    var box = $("sheetBox"); if (!box) return;
+    box.innerHTML = sheetShell(sheetSummary("불러오는 중…"), SHEETS_OPEN);
+    req("/api/v1/sheet?lab=" + LAB + "&tabs=" + encodeURIComponent(tabs.join(",")))
+      .then(function (d) { renderSheets(d.rows); })
+      .catch(function (e) {
+        var b = $("sheetBox");
+        if (b) b.innerHTML = sheetShell(sheetSummary("불러오지 못했습니다 (" + (e.code || e.message) + ")", true), SHEETS_OPEN);
+      });
+  }
+
+  function head(title, desc, toolbar, sheetTabs) {
+    var h = '<h1 class="pg">' + esc(title) + '</h1><p class="desc">' + esc(desc || "") + "</p>" +
+      '<div id="err"></div>';
+    // 운영자(랩매니저) 이상에게만 — innerHTML 이 박힌 뒤에 채운다
+    if (sheetTabs && sheetTabs.length && rank() >= 2 && VIEW_EDIT) {
+      h += '<div id="sheetBox"></div>';
+      setTimeout(function () { mountSheets(sheetTabs); }, 0);
+    }
+    return h + (toolbar ? '<div class="toolbar">' + toolbar + "</div>" : "");
   }
   function showErr(e) {
     var el = $("err"); if (!el) return;
     el.textContent = "불러오지 못했습니다 (" + (e.code || e.message) + ")";
     el.style.display = "block";
   }
-  function addBtn(id, label) { return '<button class="btn solid" id="' + id + '">+ ' + esc(label) + "</button>"; }
+  function addBtn(id, label) {
+    if (!VIEW_EDIT) return "";
+    return '<button class="btn solid" id="' + id + '">+ ' + esc(label) + "</button>";
+  }
 
   var VIEWS = {};
 
@@ -422,7 +530,8 @@
   /* ── 과제 ── */
   VIEWS.projects = function (v) {
     v.innerHTML = head("과제관리", "과제·참여연구원·마일스톤·예산 집행",
-      rank() >= 2 ? addBtn("addProject", "과제 등록") : "") + '<div id="t"></div>';
+      rank() >= 2 ? addBtn("addProject", "과제 등록") : "",
+      ["과제", "참여연구원", "마일스톤", "예산집행"]) + '<div id="t"></div>';
     if ($("addProject")) $("addProject").onclick = function () {
       openForm("과제 등록", [
         { k: "code", label: "과제번호", req: true },
@@ -522,7 +631,7 @@
   /* ── 인사 ── */
   VIEWS.hr = function (v) {
     var r2 = rank() >= 2, HK = ["members", "leaves"];
-    v.innerHTML = head("인사관리", "명부 · 참여율 · 휴가", addBtn("addLeave", "휴가 신청")) +
+    v.innerHTML = head("인사관리", "명부 · 참여율 · 휴가", addBtn("addLeave", "휴가 신청"), ["휴가"]) +
       "<h2>명부</h2><div id=t1></div><h2>휴가</h2><div id=t2></div>";
     $("addLeave").onclick = function () {
       var fields = [];
@@ -573,7 +682,7 @@
   VIEWS.finance = function (v) {
     var r2 = rank() >= 2, FK = ["fundincomes", "finance"];
     v.innerHTML = head("연구비", "과제별 수지 분석 — 수입(입금) vs 지출(집행+구매)",
-      r2 ? addBtn("addIncome", "입금 등록") : "") +
+      r2 ? addBtn("addIncome", "입금 등록") : "", ["연구비수입", "예산집행"]) +
       "<div id=t1></div><h2>입금 내역</h2><div id=t2></div>";
     if ($("addIncome")) $("addIncome").onclick = function () {
       openForm("입금 등록", [
@@ -610,7 +719,8 @@
   VIEWS.outcomes = function (v) {
     var r2 = rank() >= 2;
     v.innerHTML = head("성과", "논문 · 특허 · 기술이전",
-      addBtn("addPub", "논문") + addBtn("addPat", "특허") + (r2 ? addBtn("addTt", "기술이전") : "")) +
+      addBtn("addPub", "논문") + addBtn("addPat", "특허") + (r2 ? addBtn("addTt", "기술이전") : ""),
+      ["논문", "특허", "기술이전"]) +
       "<h2>논문</h2><div id=t1></div><h2>특허</h2><div id=t2></div><h2>기술이전</h2><div id=t3></div>";
     $("addPub").onclick = function () {
       openForm("논문 등록", [
@@ -673,9 +783,44 @@
   };
 
   /* ── 구매 ── */
+  /* ── 프로젝트 (연구 프로젝트 — 수주 과제와 별개) ── */
+  VIEWS.research = function (v) {
+    var r2 = rank() >= 2, K = ["research"];
+    v.innerHTML = head("프로젝트", "연구 프로젝트 — 수주 과제와 별개인 랩 내부 연구 단위",
+      r2 ? addBtn("addRp", "프로젝트 등록") : "", ["프로젝트"]) + "<div id=t></div>";
+    if ($("addRp")) $("addRp").onclick = function () {
+      openForm("프로젝트 등록", [
+        { k: "code", label: "프로젝트 코드", req: true },
+        { k: "title", label: "프로젝트명", req: true },
+        { k: "goal", label: "목표 · 한 줄 요약" },
+        { k: "leader_id", label: "책임자", type: "select", opts: function () { return userOpts("— 책임자 선택 —"); } },
+        { k: "project_id", label: "연계 과제", type: "select", opts: projectOpts },
+        { k: "start_date", label: "시작일", type: "date" },
+        { k: "end_date", label: "종료일", type: "date" },
+        { k: "status", label: "상태", type: "select", opts: ST.research, def: "진행" },
+        { k: "memo", label: "비고", type: "textarea" },
+      ], function (d) { return write("research_create", d, K); });
+    };
+    list("research").then(function (rows) {
+      $("t").innerHTML = table([
+        { h: "코드", k: "code", cls: "mono" }, { h: "프로젝트명", k: "title" },
+        { h: "목표", k: "goal", cls: "dim" }, { h: "책임자", k: "leader", cls: "dim" },
+        { h: "연계 과제", cls: "mono", f: function (r) {
+          return r.projectCode
+            ? '<a href="#/projects/' + r.projectId + '">' + esc(r.projectCode) + "</a>" : "-";
+        } },
+        { h: "기간", cls: "mono", f: function (r) {
+          return esc((r.startDate || "-") + (r.endDate ? " ~ " + r.endDate : ""));
+        } },
+        { h: "상태", cls: "act", f: function (r) { return statusSel("research_status", r.id, r.status, ST.research, K); } },
+      ].concat(r2 ? [{ h: "", cls: "act", f: function (r) { return delBtn("research_delete", r.id, K); } }] : []),
+        rows, "등록된 프로젝트가 없습니다");
+    }).catch(showErr);
+  };
+
   VIEWS.purchases = function (v) {
     var r2 = rank() >= 2, K = ["purchases", "finance"];
-    v.innerHTML = head("구매", "구매 신청·발주·입고", addBtn("addPr", "구매 신청")) + "<div id=t></div>";
+    v.innerHTML = head("구매", "구매 신청·발주·입고", addBtn("addPr", "구매 신청"), ["구매"]) + "<div id=t></div>";
     $("addPr").onclick = function () {
       openForm("구매 신청", [
         { k: "order_date", label: "일자", type: "date" },
@@ -702,7 +847,7 @@
   /* ── 장비 ── */
   VIEWS.instruments = function (v) {
     var r2 = rank() >= 2, K = ["instruments"];
-    v.innerHTML = head("장비", "보유 장비와 점검 일정", r2 ? addBtn("addIn", "장비 등록") : "") + "<div id=t></div>";
+    v.innerHTML = head("장비", "보유 장비와 점검 일정", r2 ? addBtn("addIn", "장비 등록") : "", ["장비"]) + "<div id=t></div>";
     if ($("addIn")) $("addIn").onclick = function () {
       openForm("장비 등록", [
         { k: "name", label: "장비명", req: true },
@@ -733,7 +878,7 @@
   /* ── 시료 ── */
   VIEWS.samples = function (v) {
     var r2 = rank() >= 2, K = ["samples"];
-    v.innerHTML = head("시료 (LIMS)", "시료 접수·보관 현황", addBtn("addSm", "시료 등록")) + "<div id=t></div>";
+    v.innerHTML = head("시료 (LIMS)", "시료 접수·보관 현황", addBtn("addSm", "시료 등록"), ["시료"]) + "<div id=t></div>";
     $("addSm").onclick = function () {
       openForm("시료 등록", [
         { k: "code", label: "시료번호", req: true },
@@ -762,7 +907,7 @@
   /* ── 실험 ── */
   VIEWS.experiments = function (v) {
     var r2 = rank() >= 2, K = ["experiments"];
-    v.innerHTML = head("실험 (LIMS)", "실험 기록", addBtn("addEx", "실험 등록")) + "<div id=t></div>";
+    v.innerHTML = head("실험 (LIMS)", "실험 기록", addBtn("addEx", "실험 등록"), ["실험"]) + "<div id=t></div>";
     $("addEx").onclick = function () {
       openForm("실험 등록", [
         { k: "code", label: "실험번호", req: true },
@@ -789,14 +934,166 @@
     }).catch(showErr);
   };
 
-  /* ── 구성원 (팀원 배정) ── */
-  VIEWS.team = function (v, _id, flash) {
-    v.innerHTML = head("구성원", "연구실별 팀원 배정 — 팀 운영자(연구책임자·랩매니저)와 팀원. 이 연구실에 배정되지 않은 계정은 접근할 수 없습니다.") +
+  /* ── 구글시트 연동 — 관리자 설정 안의 한 구획 ── */
+  function sheetSectionHtml() {
+    return "<h2>구글시트 연동</h2>" +
+      '<p class="note" style="margin-top:0">항목마다 구글시트 주소를 넣으면, 저장하는 즉시 시트를 읽어 ' +
+      "그 항목 DB에 반영합니다. 같은 입력창이 각 메뉴 상단에도 붙어 있습니다.</p>" +
+      '<div id="sheetBox">불러오는 중…</div><div id="acct" class="note" style="margin-top:6px"></div>' +
+      "<h3>한 번에 실행</h3>" +
+      '<div class="toolbar">' +
+      '<button class="btn solid" data-all="import_all">⬇ 연결된 항목 전부 가져오기 (시트 → LABIS)</button>' +
+      '<button class="btn" data-all="export_all" id="expBtn">⬆ 전부 내보내기 (LABIS → 시트)</button></div>' +
+      '<div id="allLog"></div>' +
+      "<h3>시트 양식</h3>" +
+      '<p class="note" style="margin-top:0">시트 <b>1행은 헤더</b>입니다. 아래 열 이름을 그대로 쓰고 순서는 상관없습니다. ' +
+      "워크시트가 여럿인 파일은 주소를 <b>#gid= 까지 포함</b>해 붙여넣거나, 탭 이름을 항목 이름과 같게 하세요.</p>" +
+      '<div id="guide"></div>';
+  }
+
+  function loadSheetSection() {
+    req("/api/v1/sheet?lab=" + LAB + "&full=1").then(function (d) {
+      renderSheets(d.rows, true);
+      $("acct").innerHTML = d.account
+        ? "인증: 서비스 계정 <b>" + esc(d.account) + "</b> — 비공개 시트도 읽고 씁니다. 각 시트를 이 계정에 편집자로 공유하세요."
+        : "인증: 서비스 계정 없음 — <b>링크가 있는 모든 사용자</b>로 공유된 시트의 <b>가져오기만</b> 됩니다.";
+      if (!d.account && $("expBtn")) $("expBtn").disabled = true;
+      $("allLog").innerHTML = d.syncLog
+        ? '<div class="slog' + logTone(d.syncLog) + '">최근 실행 · ' + esc(d.syncLog.at) + "</div>" +
+          '<ul class="guide">' + d.syncLog.lines.map(function (l) { return "<li>" + esc(l) + "</li>"; }).join("") + "</ul>"
+        : "";
+      $("guide").innerHTML = '<ul class="guide">' + d.guide.map(function (g) {
+        return "<li><b>" + esc(g.tab) + "</b>" + (g.importable ? "" : " (내보내기 전용)") +
+          " — " + esc(g.headers.join(", ")) + "</li>";
+      }).join("") + "</ul>";
+    }).catch(function (e) {
+      var b = $("sheetBox");
+      if (b) b.innerHTML = '<p class="note bad">불러오지 못했습니다 (' + esc(e.code || e.message) + ")</p>";
+    });
+  }
+
+  /* ── 설정 (관리자 페이지) — 구성원 배정이 여기 들어간다 ── */
+  /* ── 관리자 설정 — 연구실 · 팀원 · 팀원별 메뉴 접근 권한 ── */
+  VIEWS.settings = function (v, _id, flash) {
+    var dept = !!(ME && ME.user && ME.user.isDeptAdmin);
+    var sheetsOk = rank() >= 2 && mlevel("sheets") === "edit";
+    v.innerHTML = head("관리자 설정", "연구실 · 팀원 · 팀원별 메뉴 접근 권한") +
       (flash ? '<div class="flash">' + esc(flash) + "</div>" : "") +
-      '<div id="assignBox"></div><h2>배정된 구성원</h2><div id="t1"></div>' +
-      '<div id="inviteSec" style="display:none"><h2>대기 중인 초대</h2><div id="t2"></div></div>';
+
+      (dept ? "<h2>연구실</h2>" +
+        '<p class="note" style="margin-top:0">연구실 추가와 상태 변경은 학과관리자만 할 수 있습니다. ' +
+        "쓰지 않는 연구실은 <b>폐쇄</b>로 바꾸세요 — 자료는 그대로 남습니다.</p>" +
+        '<div id="labBox">불러오는 중…</div>' +
+        '<form class="assign" id="labForm">' +
+        '<input id="lbName" required placeholder="연구실명 *">' +
+        '<input id="lbPi" placeholder="PI 이름">' +
+        '<input id="lbRoom" placeholder="호실">' +
+        '<button type="submit" class="btn solid">연구실 추가</button></form>' : "") +
+
+      "<h2>팀원</h2>" +
+      '<p class="note" style="margin-top:0">이미 contextBio 계정이 있는 이메일이면 바로 배정되고, ' +
+      "아니면 초대 링크가 만들어집니다. 이 연구실에 배정되지 않은 계정은 접근할 수 없습니다.</p>" +
+      '<div id="assignBox"></div><h3>배정된 팀원</h3><div id="t1"></div>' +
+      '<div id="inviteSec" style="display:none"><h3>대기 중인 초대</h3><div id="t2"></div></div>' +
+
+      (rank() >= 3 ? "<h2>팀원별 메뉴 접근 권한</h2>" +
+        '<p class="note" style="margin-top:0">메뉴마다 편집 / 읽기 전용 / 차단을 정합니다. ' +
+        "권한은 <b>좁히기만</b> 합니다: 편집으로 둬도 역할이 모자라면 여전히 막힙니다.</p>" +
+        '<div id="permBox">불러오는 중…</div>' : "") +
+
+      (sheetsOk ? sheetSectionHtml() : "") +
+
+      (dept ? "<h2>사용자 관리</h2>" +
+        '<p class="note" style="margin-top:0">전체 계정·c1 연결·학과관리자 지정은 아직 기존 화면에서 합니다.</p>' +
+        '<div class="toolbar"><button class="btn" data-legacy="/admin/labs">사용자 관리 열기 ↗</button></div>' : "");
+
     req("/api/v1/lab/members?lab=" + LAB).then(function (d) { renderTeam(d); }).catch(showErr);
+    if (dept) {
+      req("/api/v1/labs").then(function (d) { renderLabs(d.labs); }).catch(function (e) {
+        var b = $("labBox");
+        if (b) b.innerHTML = '<p class="note bad">불러오지 못했습니다 (' + esc(e.code || e.message) + ")</p>";
+      });
+      $("labForm").addEventListener("submit", function (e) {
+        e.preventDefault();
+        labPost({ action: "create", name: $("lbName").value, piName: $("lbPi").value, room: $("lbRoom").value });
+      });
+    }
+    if (sheetsOk) loadSheetSection();
+    if (rank() >= 3) {
+      req("/api/v1/perm?lab=" + LAB)
+        .then(function (d) { renderPerm(d.menus, d.rows); })
+        .catch(function (e) {
+          var b = $("permBox");
+          if (b) b.innerHTML = '<p class="note bad">불러오지 못했습니다 (' + esc(e.code || e.message) + ")</p>";
+        });
+    }
   };
+
+  function labPost(body) {
+    return req("/api/v1/labs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(function (d) {
+      renderLabs(d.labs);
+      var f = $("labForm");
+      if (f) { $("lbName").value = ""; $("lbPi").value = ""; $("lbRoom").value = ""; }
+      // 연구실 목록이 바뀌었으니 랩 전환기도 새로 받는다
+      return req("/api/v1/me").then(function (d2) {
+        ME = d2;
+        var ls = ME.labs || [];
+        if (!ls.some(function (l) { return l.labId === LAB; })) {
+          // 보고 있던 연구실이 사라졌다 — 첫 연구실로 옮긴다
+          LAB = ls.length ? ls[0].labId : 0;
+          try { localStorage.setItem(LAB_KEY, String(LAB)); } catch (_) {}
+          CACHE = {};
+          renderLabSelect();
+          route();
+          return;
+        }
+        renderLabSelect();
+      });
+    }).catch(function (err) { alert("실패: " + (err.code || err.message)); });
+  }
+
+  function renderLabs(labs) {
+    var box = $("labBox"); if (!box) return;
+    box.innerHTML = table([
+      { h: "연구실명", k: "name" }, { h: "PI", k: "piName", cls: "dim" },
+      { h: "호실", k: "room", cls: "dim" },
+      { h: "구성원", cls: "num", f: function (r) { return r.members + "명"; } },
+      { h: "상태", cls: "act", f: function (r) {
+        return '<select data-labst="' + r.id + '">' +
+          ["운영", "휴면", "폐쇄"].map(function (o) {
+            return '<option' + (o === r.status ? " selected" : "") + ">" + o + "</option>";
+          }).join("") + "</select>";
+      } },
+    ], labs, "등록된 연구실이 없습니다 — 아래에서 첫 연구실을 만드세요");
+  }
+  VIEWS.team = VIEWS.settings;   // 예전 해시(#/team)·재렌더 호출 호환
+
+  var LEVELS = [["edit", "편집"], ["view", "읽기"], ["none", "차단"]];
+
+  function renderPerm(menus, rows) {
+    var box = $("permBox"); if (!box) return;
+    box.innerHTML =
+      '<div class="tblwrap"><table><thead><tr><th>구성원</th>' +
+      menus.map(function (m) { return "<th>" + esc(m.label) + "</th>"; }).join("") +
+      "<th></th></tr></thead><tbody>" +
+      rows.map(function (r) {
+        if (!r.adjustable) {
+          return '<tr><td><b>' + esc(r.name) + "</b><br><span style=\"font-size:11.5px;color:var(--muted)\">" + esc(r.email) + "</span></td>" +
+            '<td class="dim" colspan="' + (menus.length + 1) + '">연구책임자·학과관리자는 조정 대상이 아닙니다 (항상 전체 편집)</td></tr>';
+        }
+        return '<tr data-perm="' + esc(r.userId) + '"><td><b>' + esc(r.name) + "</b><br><span style=\"font-size:11.5px;color:var(--muted)\">" + esc(r.email) + "</span></td>" +
+          menus.map(function (m) {
+            return '<td><select data-menu="' + esc(m.key) + '">' + LEVELS.map(function (l) {
+              return '<option value="' + l[0] + '"' + (r.levels[m.key] === l[0] ? " selected" : "") + ">" + l[1] + "</option>";
+            }).join("") + "</select></td>";
+          }).join("") +
+          '<td class="act"><button class="btn sm solid" data-permsave="' + esc(r.userId) + '">저장</button></td></tr>';
+      }).join("") + "</tbody></table></div>";
+  }
 
   function renderTeam(d) {
     var canAssign = d.myRank >= 2, canManage = d.myRank >= 3;
@@ -896,6 +1193,11 @@
 
   /* ── 행 조작 위임 (상태 select · 삭제 · 단일 op 버튼) ── */
   $("view").addEventListener("change", function (e) {
+    var ls = e.target.closest ? e.target.closest("select[data-labst]") : null;
+    if (ls) {
+      labPost({ action: "status", id: Number(ls.getAttribute("data-labst")), status: ls.value });
+      return;
+    }
     var s2 = e.target.closest ? e.target.closest("select[data-sop]") : null;
     if (!s2) return;
     var kinds = (s2.getAttribute("data-kinds") || "").split(",").filter(Boolean);
@@ -903,7 +1205,81 @@
       .then(route)
       .catch(function (err) { alert("실패: " + (err.code || err.message)); route(); });
   });
+  // 접힘 상태는 화면을 다시 그려도 유지한다 (toggle 은 버블링하지 않아 캡처로 받는다)
+  $("view").addEventListener("toggle", function (e) {
+    var t = e.target;
+    if (t && t.classList && t.classList.contains("sheets")) SHEETS_OPEN = t.open;
+  }, true);
   $("view").addEventListener("click", function (e) {
+    var lg = e.target.closest ? e.target.closest("[data-legacy]") : null;
+    if (lg) { e.preventDefault(); openLegacy(lg.getAttribute("data-legacy")); return; }
+    var ps = e.target.closest ? e.target.closest("button[data-permsave]") : null;
+    if (ps) {
+      e.preventDefault();
+      var tr = ps.closest("tr");
+      var levels = {};
+      Array.prototype.slice.call(tr.querySelectorAll("select[data-menu]")).forEach(function (sel2) {
+        levels[sel2.getAttribute("data-menu")] = sel2.value;
+      });
+      ps.disabled = true; ps.textContent = "저장 중…";
+      req("/api/v1/perm?lab=" + LAB, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: ps.getAttribute("data-permsave"), levels: levels }),
+      }).then(function () {
+        // 내 권한이 바뀌었을 수 있으니 me 를 다시 받아 사이드바까지 새로 그린다
+        return req("/api/v1/me").then(function (d2) { ME = d2; CACHE = {}; route(); });
+      }).catch(function (err) {
+        ps.disabled = false; ps.textContent = "저장";
+        alert("실패: " + (err.code || err.message));
+      });
+      return;
+    }
+    var ab = e.target.closest ? e.target.closest("button[data-all]") : null;
+    if (ab) {
+      e.preventDefault();
+      var abs = Array.prototype.slice.call(ab.parentNode.querySelectorAll("button"));
+      abs.forEach(function (b) { b.disabled = true; });
+      $("allLog").innerHTML = '<p class="note">실행 중… (항목이 많으면 시간이 걸립니다)</p>';
+      req("/api/v1/sheet?lab=" + LAB, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ op: ab.getAttribute("data-all") }),
+      }).then(function () { CACHE = {}; route(); })
+        .catch(function (err) {
+          abs.forEach(function (b) { b.disabled = false; });
+          $("allLog").innerHTML = '<p class="note bad">실패: ' + esc(err.code || err.message) + "</p>";
+        });
+      return;
+    }
+    var sb = e.target.closest ? e.target.closest(".srow button[data-act]") : null;
+    if (sb) {
+      e.preventDefault();
+      var row = sb.closest(".srow");
+      var slog = row.querySelector(".slog");
+      var btns = Array.prototype.slice.call(row.querySelectorAll("button"));
+      btns.forEach(function (b) { b.disabled = true; });
+      slog.className = "slog";
+      slog.textContent = "시트를 읽어 반영하는 중…";
+      req("/api/v1/sheet?lab=" + LAB, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          op: sb.getAttribute("data-act"),
+          tab: row.getAttribute("data-tab"),
+          url: row.querySelector("input").value,
+        }),
+      }).then(function () {
+        CACHE = {};          // 시트가 DB 를 바꿨다 — 목록 캐시를 전부 버린다
+        SHEETS_OPEN = true;
+        route();
+      }).catch(function (err) {
+        btns.forEach(function (b) { b.disabled = false; });
+        slog.className = "slog bad";
+        slog.textContent = "실패: " + (err.code || err.message);
+      });
+      return;
+    }
     var del = e.target.closest ? e.target.closest("button[data-del]") : null;
     if (del) {
       if (!confirm("정말 삭제할까요?")) return;
@@ -923,22 +1299,19 @@
   });
 
   /* ── 내비게이션·라우터 ── */
+  // h=해시, t=이름, v=뷰, k=메뉴 키(팀관리자 권한 조정 대상), sep=앞에 구분선
   var NAV = [
-    ["#/", "대시보드", "dash"],
-    ["#/projects", "과제", "projects"],
-    ["#/hr", "인사", "hr"],
-    ["#/finance", "연구비", "finance"],
-    ["#/outcomes", "성과", "outcomes"],
-    ["#/purchases", "구매", "purchases"],
-    ["#/lims/instruments", "장비", "instruments"],
-    ["#/lims/samples", "시료 (LIMS)", "samples"],
-    ["#/lims/experiments", "실험 (LIMS)", "experiments"],
-    ["#/team", "구성원", "team"],
-  ];
-  var LEGACY = [
-    ["/sync", "구글시트 연동"],
-    ["/admin/labs", "학과 관리"],
-    ["/enter", "기존 전체 화면"],
+    { h: "#/", t: "대시보드", v: "dash", k: "dashboard" },
+    { h: "#/projects", t: "과제", v: "projects", k: "projects" },
+    { h: "#/research", t: "프로젝트", v: "research", k: "research" },
+    { h: "#/hr", t: "인사", v: "hr", k: "hr" },
+    { h: "#/finance", t: "연구비", v: "finance", k: "finance" },
+    { h: "#/outcomes", t: "성과", v: "outcomes", k: "outcomes" },
+    { h: "#/purchases", t: "구매", v: "purchases", k: "purchases" },
+    { h: "#/lims/instruments", t: "장비", v: "instruments", k: "instruments" },
+    { h: "#/lims/samples", t: "시료 (LIMS)", v: "samples", k: "samples" },
+    { h: "#/lims/experiments", t: "실험 (LIMS)", v: "experiments", k: "experiments" },
+    { h: "#/settings", t: "관리자 설정", v: "settings", sep: true },
   ];
   function labName() {
     var l = (ME.labs || []).find(function (x) { return x.labId === LAB; });
@@ -947,34 +1320,30 @@
   function renderNav() {
     var cur = location.hash || "#/";
     $("sideNav").innerHTML =
-      NAV.map(function (n2) {
-        var on = cur === n2[0] || (n2[0] !== "#/" && cur.indexOf(n2[0]) === 0);
-        return '<a href="' + n2[0] + '"' + (on ? ' class="on"' : "") + ">" + esc(n2[1]) + "</a>";
-      }).join("") +
-      '<div class="sep"></div><div class="cap">기존 화면</div>' +
-      LEGACY.map(function (n2) {
-        return '<a href="#" data-legacy="' + esc(n2[0]) + '">' + esc(n2[1]) + " ↗</a>";
-      }).join("");
+      NAV.filter(function (n2) { return mlevel(n2.k) !== "none"; })   // 팀관리자가 잠근 메뉴는 감춘다
+        .map(function (n2) {
+          var on = cur === n2.h || (n2.h !== "#/" && cur.indexOf(n2.h) === 0);
+          return (n2.sep ? '<div class="sep"></div>' : "") +
+            '<a href="' + n2.h + '"' + (on ? ' class="on"' : "") + ">" + esc(n2.t) + "</a>";
+        }).join("");
   }
   function route() {
     if (!ME) return;
     renderNav();
     var h = location.hash || "#/";
+    if (h === "#/team") { location.hash = "#/settings"; return; }   // 구성원 → 설정으로 옮김
+    // 구글시트 연동은 관리자 설정 안으로 옮겼다
+    if (h === "#/sync" || h === "#/sheets") { location.hash = "#/settings"; return; }
     var v = $("view");
     var m = /^#\/projects\/(\d+)$/.exec(h);
+    var entry = NAV.find(function (n2) { return n2.h === (m ? "#/projects" : h); }) || NAV[0];
+    // 잠긴 메뉴는 주소로 들어와도 홈으로 (서버 가드가 데이터도 막는다)
+    if (mlevel(entry.k) === "none") { location.hash = "#/"; return; }
+    VIEW_EDIT = mlevel(entry.k) === "edit";
     if (m) return VIEWS.projectDetail(v, Number(m[1]));
-    var entry = NAV.find(function (n2) { return n2[0] === h; });
-    (VIEWS[(entry || NAV[0])[2]])(v);
+    (VIEWS[entry.v])(v);
   }
   window.addEventListener("hashchange", route);
-  $("sideNav").addEventListener("click", function (e) {
-    var a = e.target.closest ? e.target.closest("a[data-legacy]") : null;
-    if (a) {
-      e.preventDefault();
-      var p = a.getAttribute("data-legacy");
-      openLegacy(p === "/enter" ? "/enter" + (LAB ? "?lab=" + LAB : "") : p);
-    }
-  });
   $("dashLab").addEventListener("change", function () {
     LAB = Number(this.value); CACHE = {};
     try { localStorage.setItem(LAB_KEY, String(LAB)); } catch (_) {}
@@ -1006,23 +1375,21 @@
 
   var tokenPromise = idToken();
 
-  function enterApp(token, wantLab) {
+  /** auto = 사용자가 고르지 않은 자동 입장 — 갈 곳이 분명할 때만 통과시킨다 */
+  function enterApp(token, wantLab, auto) {
     TOKEN = token;
     return req("/api/v1/me").then(function (d) {
       ME = d;
       var labs = d.labs || [];
       if (!labs.length) throw Object.assign(new Error("no_lab"), { code: "not_invited" });
-      LAB = labs.some(function (l) { return String(l.labId) === String(wantLab); })
-        ? Number(wantLab) : labs[0].labId;
+      var matched = labs.some(function (l) { return String(l.labId) === String(wantLab); });
+      // 저장된 랩이 유효하거나 소속 연구실이 하나뿐이면 선택 없이 들어간다
+      if (auto && !matched && labs.length !== 1) {
+        throw Object.assign(new Error("ambiguous"), { code: "ambiguous_lab" });
+      }
+      LAB = matched ? Number(wantLab) : labs[0].labId;
       try { localStorage.setItem(LAB_KEY, String(LAB)); } catch (_) {}
-      var dl = $("dashLab");
-      dl.innerHTML = "";
-      labs.forEach(function (l) {
-        var o = document.createElement("option");
-        o.value = String(l.labId); o.textContent = l.labName;
-        if (l.labId === LAB) o.selected = true;
-        dl.appendChild(o);
-      });
+      renderLabSelect();
       $("entry").style.display = "none";
       $("app").style.display = "block";
       route();
@@ -1050,11 +1417,57 @@
     });
   });
 
-  // 재방문: 로그인돼 있고 저장된 랩이 있으면 선택창 없이 곧장 앱으로
+  /* ── 새 연구실 개설 — 로그인만 되어 있으면 셀프서비스, 개설자가 연구책임자가 된다 */
+  $("newLabBtn").addEventListener("click", function () {
+    tokenPromise.then(function (token) {
+      if (!token) {
+        location.href = "/login?next=" + encodeURIComponent(location.pathname);
+        return;
+      }
+      TOKEN = token;
+      openForm("새 연구실 개설", [
+        { k: "name", label: "연구실 이름", req: true },
+        { k: "room", label: "호실 (선택)" },
+      ], function (d) {
+        return req("/api/v1/labs/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(d),
+        }).then(function (r) {
+          try { localStorage.setItem(LAB_KEY, String(r.labId)); } catch (_) {}
+          return enterApp(token, r.labId);
+        }).catch(function (err) {
+          if (err && err.code === "name_taken") {
+            throw Object.assign(new Error("이미 있는 연구실 이름입니다"), { code: "" });
+          }
+          throw err;
+        });
+      });
+    });
+  });
+
+  /** 상단 연구실 전환기 — ME.labs 기준으로 다시 그린다 */
+  function renderLabSelect() {
+    var dl = $("dashLab");
+    if (!dl || !ME) return;
+    dl.innerHTML = "";
+    (ME.labs || []).forEach(function (l) {
+      var o = document.createElement("option");
+      o.value = String(l.labId); o.textContent = l.labName;
+      if (l.labId === LAB) o.selected = true;
+      dl.appendChild(o);
+    });
+  }
+
+  function showPicker() {
+    var w = $("entryWait"); if (w) w.style.display = "none";
+    var p = $("entryPick"); if (p) p.style.display = "block";
+  }
+
+  // 로그인돼 있고 갈 곳이 분명하면(저장된 랩 또는 소속 연구실 1곳) 선택창 없이 곧장 앱으로
   tokenPromise.then(function (token) {
-    if (!token) return;
-    var saved = localStorage.getItem(LAB_KEY);
-    if (saved) { enterApp(token, saved).catch(function () { /* 선택창 유지 */ }); }
+    if (!token) return showPicker();
+    enterApp(token, localStorage.getItem(LAB_KEY), true).catch(showPicker);
   });
 })();
 </script>

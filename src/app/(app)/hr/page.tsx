@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireLab } from "@/lib/guard";
 import { listLabUsers, listLeaves } from "@/lib/queries";
 import { updateProfile, createLeave, setLeaveStatus } from "@/lib/actions";
+import { SheetSources } from "@/components/SheetSources";
 import { Badge, PageHeader, Section } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -13,15 +14,20 @@ const ROLE_KO: Record<string, string> = {
 };
 
 export default async function HrPage() {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "hr", "view");
   const users = await listLabUsers(ctx.labId);
   const leaves = await listLeaves(ctx.labId);
-  const canManage = ctx.role === "PI" || ctx.role === "LAB_MANAGER";
+  const canEdit = ctx.level === "edit";
+  const canManage = canEdit && (ctx.role === "PI" || ctx.role === "LAB_MANAGER");
   const active = users.filter((u) => u.workStatus === "재직");
 
   return (
     <div>
       <PageHeader title={`인사관리 — ${ctx.labName}`} desc="구성원 명부 · 과제 참여율 · 휴가" />
+
+      {canManage && (
+        <SheetSources labId={ctx.labId} tabs={["휴가"]} from="/hr" />
+      )}
 
       <Section
         title={`구성원 명부 (${users.length}명)`}
@@ -79,27 +85,29 @@ export default async function HrPage() {
       </Section>
 
       <Section title="휴가 관리">
-        <form action={createLeave} className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-6">
-          {canManage ? (
-            <select name="user_id" className="inp">
-              <option value={ctx.user.id}>본인 ({ctx.user.name})</option>
-              {active
-                .filter((u) => u.userId !== ctx.user.id)
-                .map((u) => (
-                  <option key={u.userId} value={u.userId}>{u.name}</option>
-                ))}
+        {canEdit && (
+          <form action={createLeave} className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-6">
+            {canManage ? (
+              <select name="user_id" className="inp">
+                <option value={ctx.user.id}>본인 ({ctx.user.name})</option>
+                {active
+                  .filter((u) => u.userId !== ctx.user.id)
+                  .map((u) => (
+                    <option key={u.userId} value={u.userId}>{u.name}</option>
+                  ))}
+              </select>
+            ) : (
+              <div className="inp flex items-center bg-slate-50 text-slate-500">{ctx.user.name}</div>
+            )}
+            <select name="type" className="inp">
+              <option>연차</option><option>병가</option><option>공가</option><option>기타</option>
             </select>
-          ) : (
-            <div className="inp flex items-center bg-slate-50 text-slate-500">{ctx.user.name}</div>
-          )}
-          <select name="type" className="inp">
-            <option>연차</option><option>병가</option><option>공가</option><option>기타</option>
-          </select>
-          <input name="start_date" type="date" required className="inp" />
-          <input name="end_date" type="date" className="inp" />
-          <input name="days" type="number" step="0.5" min="0.5" placeholder="일수" className="inp" />
-          <button className="btn justify-center">신청</button>
-        </form>
+            <input name="start_date" type="date" required className="inp" />
+            <input name="end_date" type="date" className="inp" />
+            <input name="days" type="number" step="0.5" min="0.5" placeholder="일수" className="inp" />
+            <button className="btn justify-center">신청</button>
+          </form>
+        )}
         <table className="tbl">
           <thead>
             <tr><th>이름</th><th>구분</th><th>기간</th><th>일수</th><th>상태</th><th></th></tr>

@@ -3,39 +3,39 @@ import { cookies } from "next/headers";
 import { requireUser, ACTIVE_LAB_COOKIE } from "@/lib/guard";
 import { prisma } from "@/lib/prisma";
 import { logoutAction, switchLabAction } from "@/lib/authActions";
-
-// 관리 항목: 인사 · 과제 · 연구비 · 성과 · 구매 · 장비 (+ LIMS 기록)
-const NAV = [
-  { href: "/", label: "대시보드", icon: "◧" },
-  { href: "/hr", label: "인사", icon: "◉" },
-  { href: "/projects", label: "과제", icon: "▤" },
-  { href: "/finance", label: "연구비", icon: "₩" },
-  { href: "/outcomes", label: "성과", icon: "◆" },
-  { href: "/purchases", label: "구매", icon: "▦" },
-  { href: "/lims/instruments", label: "장비", icon: "⚙" },
-  { href: "/lims/samples", label: "시료 (LIMS)", icon: "⬡" },
-  { href: "/lims/experiments", label: "실험 (LIMS)", icon: "⚗" },
-  { href: "/sync", label: "구글시트 연동", icon: "⇄" },
-];
+import { SIDEBAR_MENUS } from "@/lib/menus";
+import { menuLevels } from "@/lib/perm";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
   const store = await cookies();
   const activeLabId = Number(store.get(ACTIVE_LAB_COOKIE)?.value ?? NaN);
 
-  // 전환 가능한 랩: 소속 랩 (학과관리자는 전체 랩)
-  const labs = user.isDeptAdmin
+  // 전환 가능한 랩: 소속 랩 (학과관리자는 전체 랩).
+  // 폐쇄된 랩은 전환기에서 감춘다 — 지금 보고 있는 랩이면 남겨 둔다(빠져나갈 길을 막지 않으려고).
+  const allLabs = user.isDeptAdmin
     ? (await prisma.lab.findMany({ orderBy: { name: "asc" } })).map((l) => ({
         labId: l.id,
         labName: l.name,
+        labStatus: l.status,
       }))
     : user.memberships;
+  const labs = allLabs.filter((l) => l.labStatus !== "폐쇄" || l.labId === activeLabId);
 
   const currentLab =
     labs.find((l) => l.labId === activeLabId)?.labName ?? labs[0]?.labName ?? "";
 
   const canManageLab =
     user.isDeptAdmin || user.memberships.some((m) => m.role === "PI" || m.role === "LAB_MANAGER");
+  // 팀관리자가 잠근 메뉴는 사이드바에서 감춘다 (경로 접근은 서버 가드가 막는다)
+  const activeLab = labs.find((l) => l.labId === activeLabId) ?? labs[0];
+  const activeRole =
+    user.memberships.find((m) => m.labId === activeLab?.labId)?.role ??
+    (user.isDeptAdmin ? "PI" : null);
+  const levels = activeLab && activeRole
+    ? await menuLevels(activeLab.labId, user.id, activeRole, user.isDeptAdmin)
+    : null;
+  const nav = SIDEBAR_MENUS.filter((m) => !levels || levels[m.key] !== "none");
 
   const labSwitcher = labs.length > 0 && (
     <form action={switchLabAction}>
@@ -56,11 +56,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <>
       {canManageLab && (
         <Link
-          href="/lab/members"
+          href="/admin/settings"
           className="mb-0.5 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-sky-50 hover:text-sky-700"
         >
-          <span className="w-4 text-center text-slate-400">☰</span>
-          랩 구성원 관리
+          <span className="w-4 text-center text-slate-400">⚿</span>
+          관리자 설정
         </Link>
       )}
       {user.isDeptAdmin && (
@@ -69,7 +69,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           className="mb-0.5 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-sky-50 hover:text-sky-700"
         >
           <span className="w-4 text-center text-slate-400">★</span>
-          학과 관리
+          사용자 관리
         </Link>
       )}
     </>
@@ -89,7 +89,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         {labs.length > 0 && <div className="px-4 pb-3">{labSwitcher}</div>}
 
         <nav className="flex-1 px-2">
-          {NAV.map((item) => (
+          {nav.map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -152,7 +152,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </details>
         </div>
         <nav className="flex gap-1 overflow-x-auto px-3 pb-2">
-          {NAV.map((item) => (
+          {nav.map((item) => (
             <Link
               key={item.href}
               href={item.href}

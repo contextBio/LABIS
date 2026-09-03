@@ -2,18 +2,20 @@ import Link from "next/link";
 import { requireLab } from "@/lib/guard";
 import { financeSummary, listFundIncomes, listProjects } from "@/lib/queries";
 import { createFundIncome, deleteFundIncome } from "@/lib/actions";
+import { SheetSources } from "@/components/SheetSources";
 import { Badge, PageHeader, Section, won } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
 export default async function FinancePage() {
-  const ctx = await requireLab();
+  const ctx = await requireLab("MEMBER", "finance", "view");
   const [summary, incomes, projects] = await Promise.all([
     financeSummary(ctx.labId),
     listFundIncomes(ctx.labId),
     listProjects(ctx.labId),
   ]);
-  const canManage = ctx.role === "PI" || ctx.role === "LAB_MANAGER";
+  const canEdit = ctx.level === "edit";
+  const canManage = canEdit && (ctx.role === "PI" || ctx.role === "LAB_MANAGER");
 
   const totals = summary.rows.reduce(
     (acc, r) => ({
@@ -30,6 +32,10 @@ export default async function FinancePage() {
   return (
     <div>
       <PageHeader title={`연구비 관리 — ${ctx.labName}`} desc="수입 · 지출 · 과제별 수지 분석" />
+
+      {canManage && (
+        <SheetSources labId={ctx.labId} tabs={["연구비수입", "예산집행"]} from="/finance" />
+      )}
 
       <div className="mb-5 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <div className="card">

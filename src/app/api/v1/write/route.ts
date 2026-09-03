@@ -6,15 +6,25 @@
  * 외부 id 주입은 assertLabUser/assertLabProject 로 막는다 — actions.ts 와 동일.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { apiUser, apiLab, withCors, corsPreflight, type ApiUser } from "@/lib/apiGuard";
+import {
+  apiUser, apiLab, apiRank, apiMenuAllowed, menuForbidden, withCors, corsPreflight, type ApiUser,
+} from "@/lib/apiGuard";
+import type { MenuKey } from "@/lib/menus";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/guard";
 
-const RANK: Record<string, number> = { MEMBER: 1, LAB_MANAGER: 2, PI: 3 };
-function myRank(user: ApiUser, labId: number): number {
-  if (user.isDeptAdmin) return 4;
-  const m = user.memberships.find((x) => x.labId === labId);
-  return m ? RANK[m.role] : 0;
+/** op 이름 앞머리 → 메뉴. 팀관리자가 읽기 전용으로 잠근 메뉴는 쓰기가 막힌다. */
+const OP_MENU: Array<[string, MenuKey]> = [
+  ["profile_", "hr"], ["leave_", "hr"],
+  ["project_", "projects"], ["milestone_", "projects"], ["budget_", "projects"],
+  ["research_", "research"],
+  ["publication_", "outcomes"], ["patent_", "outcomes"], ["techtransfer_", "outcomes"],
+  ["purchase_", "purchases"], ["fundincome_", "finance"],
+  ["sample_", "samples"], ["experiment_", "experiments"], ["instrument_", "instruments"],
+];
+function opMenu(op: string): MenuKey | null {
+  const hit = OP_MENU.find(([prefix]) => op.startsWith(prefix));
+  return hit ? hit[1] : null;
 }
 
 type D = Record<string, unknown>;
@@ -129,6 +139,28 @@ const OPS: Record<string, Op> = {
     const id = n(d, "id");
     await prisma.budgetItem.deleteMany({ where: { id, project: { labId: c.labId } } });
     await audit(c.user.id, c.labId, "budget.delete", "budget_item", id);
+  } },
+
+  /* ── 연구 프로젝트 (수주 과제와 별개) ── */
+  research_create: { min: 2, run: async (c, d) => {
+    const r = await prisma.researchProject.create({ data: {
+      labId: c.labId, code: s(d, "code"), title: s(d, "title"), goal: s(d, "goal"),
+      leaderId: await assertLabUser(c.labId, sidOf(d, "leader_id")),
+      projectId: await assertLabProject(c.labId, nidOf(d, "project_id")),
+      startDate: s(d, "start_date"), endDate: s(d, "end_date"),
+      status: s(d, "status") || "진행", memo: s(d, "memo"),
+    } });
+    await audit(c.user.id, c.labId, "research.create", "research_project", r.id, { code: r.code });
+    return { id: r.id };
+  } },
+  research_status: { min: 1, run: async (c, d) => {
+    await prisma.researchProject.updateMany({
+      where: { id: n(d, "id"), labId: c.labId }, data: { status: s(d, "status") } });
+  } },
+  research_delete: { min: 2, run: async (c, d) => {
+    const id = n(d, "id");
+    await prisma.researchProject.deleteMany({ where: { id, labId: c.labId } });
+    await audit(c.user.id, c.labId, "research.delete", "research_project", id);
   } },
 
   /* ── 성과 ── */
@@ -279,13 +311,16 @@ export async function POST(req: NextRequest) {
   if (labId instanceof NextResponse) return labId;
 
   const body = (await req.json().catch(() => ({}))) as { op?: string; data?: D };
-  const op = OPS[String(body.op ?? "")];
+  const opName = String(body.op ?? "");
+  const op = OPS[opName];
   if (!op) return withCors(req, NextResponse.json({ ok: false, error: "unknown_op" }, { status: 400 }));
 
-  const rank = myRank(user, labId);
+  const rank = apiRank(user, labId);
   if (rank < op.min) {
     return withCors(req, NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }));
   }
+  const menu = opMenu(opName);
+  if (menu && !(await apiMenuAllowed(user, labId, menu, "edit"))) return menuForbidden(req);
   try {
     const extra = (await op.run({ labId, user, rank }, body.data || {})) || {};
     return withCors(req, NextResponse.json(Object.assign({ ok: true }, extra)));
