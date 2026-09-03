@@ -168,9 +168,14 @@
         </select>
         <button type="submit" class="primary">LABIS 입장</button>
       </form>
+      <button type="button" class="btn" id="newLabBtn"
+              style="width:100%;margin-top:10px;padding:10px 12px;font-size:13.5px">
+        + 새 연구실 개설
+      </button>
       <p class="hint">
         contextBio 통합 계정으로 로그인합니다.<br>
-        접근 권한은 관리자의 초대로 부여됩니다.
+        기존 연구실 접근 권한은 관리자의 초대로 부여되고,<br>
+        새 연구실은 직접 개설할 수 있습니다 (개설자 = 팀 운영자).
       </p>
     </div>
   </main>
@@ -1408,6 +1413,35 @@
           return;
         }
         openLegacy("/enter" + (lab ? "?lab=" + encodeURIComponent(lab) : ""));
+      });
+    });
+  });
+
+  /* ── 새 연구실 개설 — 로그인만 되어 있으면 셀프서비스, 개설자가 연구책임자가 된다 */
+  $("newLabBtn").addEventListener("click", function () {
+    tokenPromise.then(function (token) {
+      if (!token) {
+        location.href = "/login?next=" + encodeURIComponent(location.pathname);
+        return;
+      }
+      TOKEN = token;
+      openForm("새 연구실 개설", [
+        { k: "name", label: "연구실 이름", req: true },
+        { k: "room", label: "호실 (선택)" },
+      ], function (d) {
+        return req("/api/v1/labs/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(d),
+        }).then(function (r) {
+          try { localStorage.setItem(LAB_KEY, String(r.labId)); } catch (_) {}
+          return enterApp(token, r.labId);
+        }).catch(function (err) {
+          if (err && err.code === "name_taken") {
+            throw Object.assign(new Error("이미 있는 연구실 이름입니다"), { code: "" });
+          }
+          throw err;
+        });
       });
     });
   });
