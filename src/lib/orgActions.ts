@@ -73,23 +73,58 @@ export async function toggleDeptAdmin(fd: FormData) {
 
 // ---------- 랩 구성원 관리 (PI / 랩매니저) ----------
 
+/** 한 줄에 하나씩, '이름 <메일>'·'이름, 메일' 같은 형태에서도 메일만 뽑아낸다 */
+function parseEmails(raw: string): string[] {
+  const found = raw.toLowerCase().match(/[^\s<>,;"']+@[^\s<>,;"']+\.[^\s<>,;"']+/g) ?? [];
+  return [...new Set(found)];
+}
+
+/**
+ * 팀원 추가 — 여러 명을 한 번에 받는다 (한 줄에 하나).
+ * 이미 계정이 있으면 바로 배정하고, 없으면 초대 링크를 만든다.
+ */
 export async function inviteMember(fd: FormData) {
   const ctx = await requireLab("LAB_MANAGER");
-  const email = s(fd, "email").toLowerCase();
   const role = asRole(s(fd, "role"));
-  if (!email) return;
   // 랩매니저는 PI 역할로 초대 불가
   if (role === "PI" && ctx.role !== "PI") return;
-  const invite = await prisma.invitation.create({
-    data: {
-      email,
-      labId: ctx.labId,
-      role,
-      invitedById: ctx.user.id,
-      expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000),
-    },
+
+  const emails = parseEmails(s(fd, "emails") || s(fd, "email"));
+  if (!emails.length) return;
+
+  let assigned = 0, invited = 0, skipped = 0;
+  for (const email of emails) {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (user) {
+      await prisma.membership.upsert({
+        where: { userId_labId: { userId: user.id, labId: ctx.labId } },
+        create: { userId: user.id, labId: ctx.labId, role },
+        update: {},   // 이미 소속이면 역할은 건드리지 않는다 (역할 변경은 따로 있다)
+      });
+      assigned++;
+      continue;
+    }
+    const pending = await prisma.invitation.findFirst({
+      where: { labId: ctx.labId, email, acceptedAt: null, expiresAt: { gt: new Date() } },
+    });
+    if (pending) {
+      skipped++;
+      continue;
+    }
+    await prisma.invitation.create({
+      data: {
+        email,
+        labId: ctx.labId,
+        role,
+        invitedById: ctx.user.id,
+        expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+      },
+    });
+    invited++;
+  }
+  await audit(ctx.user.id, ctx.labId, "invite.create", "invitation", "", {
+    role, assigned, invited, skipped, emails: emails.length,
   });
-  await audit(ctx.user.id, ctx.labId, "invite.create", "invitation", invite.id, { email, role });
   revalidatePath("/admin/settings");
 }
 

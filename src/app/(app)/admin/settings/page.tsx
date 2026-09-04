@@ -143,14 +143,22 @@ export default async function AdminSettingsPage() {
           </tbody>
         </table>
 
-        <form action={inviteMember} className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <input name="email" type="email" required placeholder="이메일 * (contextBio 계정)" className="inp col-span-2" />
-          <select name="role" className="inp">
-            <option value="MEMBER">연구원</option>
-            <option value="LAB_MANAGER">랩매니저</option>
-            {isPI && <option value="PI">연구책임자</option>}
-          </select>
-          <button className="btn justify-center">팀원 추가</button>
+        <form action={inviteMember} className="grid gap-3 md:grid-cols-4">
+          <textarea
+            name="emails"
+            required
+            rows={3}
+            placeholder={"이메일 * — 여러 명은 한 줄에 하나씩\nkim@example.com\n김승호 <seungho@example.com>"}
+            className="inp md:col-span-3"
+          />
+          <div className="flex flex-col gap-3">
+            <select name="role" className="inp">
+              <option value="MEMBER">연구원</option>
+              <option value="LAB_MANAGER">랩매니저</option>
+              {isPI && <option value="PI">연구책임자</option>}
+            </select>
+            <button className="btn justify-center">팀원 추가</button>
+          </div>
         </form>
 
         {invites.length > 0 && (
@@ -188,8 +196,11 @@ export default async function AdminSettingsPage() {
           </>
         )}
         <p className="mt-3 text-xs text-slate-400">
-          이미 contextBio 계정이 있는 이메일이면 바로 배정되고, 아니면 초대 링크가 만들어집니다 (7일 유효).
-          역할 변경·삭제는 연구책임자만 할 수 있습니다.
+          여러 명을 한 번에 넣을 수 있습니다 — 한 줄에 하나씩, <code className="rounded bg-slate-100 px-1">이름 &lt;메일&gt;</code> 형태도 됩니다.
+          이미 contextBio 계정이 있으면 바로 배정되고, 없으면 초대 링크가 만들어집니다 (7일 유효).
+          이미 대기 중인 초대는 건너뜁니다. 역할 변경·삭제는 연구책임자만 할 수 있습니다.
+          <br />
+          시트 가져오기는 <b>명부의 이름</b>으로 사람을 찾습니다 — 시트에 적힌 이름과 같아야 반영됩니다.
         </p>
       </Section>
 

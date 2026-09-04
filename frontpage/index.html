@@ -110,6 +110,7 @@
   .kv .k{color:var(--muted);font-size:12px}
   form.assign{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0 4px}
   form.assign input{width:240px}
+  form.assign textarea{width:260px;font-family:inherit;resize:vertical}
   .flash{margin:8px 0;padding:8px 12px;border-radius:8px;background:#ecfdf5;color:var(--ok);font-size:12.5px}
 
   /* ── 항목별 구글시트 연동 ── */
@@ -1129,7 +1130,7 @@
     if (canAssign) {
       setHtml("assignBox",
         '<form class="assign" id="assignForm">' +
-        '<input type="email" id="asEmail" required placeholder="이메일 (contextBio 계정)">' +
+        '<textarea id="asEmail" rows="2" required placeholder="이메일 — 여러 명은 한 줄에 하나씩"></textarea>' +
         '<select id="asRole"><option value="MEMBER">팀원 (연구원)</option>' +
         '<option value="LAB_MANAGER">팀 운영자 (랩매니저)</option>' +
         (d.myRank >= 3 ? '<option value="PI">팀 운영자 (연구책임자)</option>' : "") +
@@ -1138,13 +1139,25 @@
       if (!$("assignForm")) return;
       $("assignForm").addEventListener("submit", function (e) {
         e.preventDefault();
-        teamPost({ action: "assign", email: $("asEmail").value, role: $("asRole").value })
-          .then(function (d2) {
-            var msg = d2.assigned === "member" ? "배정했습니다."
-              : "초대를 만들었습니다 — 초대 링크를 아래 목록에서 복사해 전달하세요.";
-            invalidate(["members"]);
-            VIEWS.team($("view"), null, msg);
-          }).catch(function (e2) { alert("실패: " + (e2.code || e2.message)); });
+        var raw = ($("asEmail").value || "").toLowerCase();
+        var mails = raw.match(/[^\s<>,;"']+@[^\s<>,;"']+\.[^\s<>,;"']+/g) || [];
+        if (!mails.length) { alert("이메일을 찾지 못했습니다."); return; }
+        var role = $("asRole").value;
+        var done = 0, invitedAny = false;
+        // 한 명씩 순서대로 — 실패한 건은 알려 주고 나머지는 계속한다
+        mails.reduce(function (chain, email) {
+          return chain.then(function () {
+            return teamPost({ action: "assign", email: email, role: role }).then(function (d2) {
+              done++;
+              if (d2.assigned !== "member") invitedAny = true;
+            }).catch(function (e2) { alert(email + " 실패: " + (e2.code || e2.message)); });
+          });
+        }, Promise.resolve()).then(function () {
+          invalidate(["members"]);
+          VIEWS.team($("view"), null,
+            done + "명 처리했습니다." +
+            (invitedAny ? " 초대 링크는 아래 목록에서 복사해 전달하세요." : ""));
+        });
       });
     } else {
       setHtml("assignBox", '<p class="note">배정 변경은 팀 운영자만 할 수 있습니다.</p>');
