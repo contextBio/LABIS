@@ -212,6 +212,13 @@
   /** 화면 세대 — route() 마다 올라간다. 늦게 온 응답이 다음 화면의 DOM 을 건드리지 못하게. */
   var RENDER_SEQ = 0;
   function stale(seq) { return seq !== RENDER_SEQ; }
+  var NEVER = new Promise(function () {});   // 영원히 안 정해지는 약속 — 늦게 온 응답의 체인을 버린다
+  /** 화면용 조회 — 화면이 바뀐 뒤 도착하면 then·catch 를 아예 타지 않는다.
+      그릴 자리가 이미 없어서, 그리려 들면 null 오류가 엉뚱한 새 화면에 오배송된다. */
+  function fresh(p) {
+    var seq = RENDER_SEQ;
+    return p.then(function (d) { return stale(seq) ? NEVER : d; });
+  }
   /** 없는 자리에 쓰지 않는다 (화면이 바뀐 뒤 도착한 응답) */
   function setHtml(id, html) {
     var el = $(id);
@@ -508,7 +515,7 @@
       '<div class="grid2"><div><h2>다가오는 마일스톤</h2><div id="ms"></div></div>' +
       '<div><h2>최근 실험</h2><div id="ex"></div></div></div>' +
       '<h2>진행 중 과제</h2><div id="pj"></div>';
-    req("/api/v1/summary?lab=" + LAB).then(function (d) {
+    fresh(req("/api/v1/summary?lab=" + LAB)).then(function (d) {
       var s = d.stats;
       var cards = [
         ["진행 중 과제", s.activeProjects + "건", "#/projects", false],
@@ -564,7 +571,7 @@
         });
       });
     };
-    list("projects").then(function (rows) {
+    fresh(list("projects")).then(function (rows) {
       $("t").innerHTML = table([
         { h: "과제번호", cls: "mono", f: function (r) { return '<a href="#/projects/' + r.id + '">' + esc(r.code) + "</a>"; } },
         { h: "과제명", k: "title" }, { h: "발주처", k: "sponsor", cls: "dim" },
@@ -579,7 +586,7 @@
 
   VIEWS.projectDetail = function (v, id) {
     v.innerHTML = head("과제 상세", "") + '<div id="t">불러오는 중…</div>';
-    req("/api/v1/project?lab=" + LAB + "&id=" + id).then(function (d) {
+    fresh(req("/api/v1/project?lab=" + LAB + "&id=" + id)).then(function (d) {
       var p = d.project, r2 = rank() >= 2, PK = ["projects", "finance"];
       v.querySelector("h1.pg").textContent = p.code + " — " + p.title;
       $("t").innerHTML =
@@ -658,7 +665,7 @@
         { k: "reason", label: "사유", type: "textarea" });
       openForm("휴가 신청", fields, function (d) { return write("leave_create", d, HK); });
     };
-    list("members").then(function (rows) {
+    fresh(list("members")).then(function (rows) {
       $("t1").innerHTML = table([
         { h: "이름", k: "name" }, { h: "직급", k: "position", cls: "dim" },
         { h: "랩 역할", f: function (r) { return roleBadge(r.labRole); } },
@@ -680,7 +687,7 @@
         ], function (d) { d.user_id = u.userId; return write("profile_update", d, HK); });
       });
     }).catch(showErr);
-    list("leaves").then(function (rows) {
+    fresh(list("leaves")).then(function (rows) {
       $("t2").innerHTML = table([
         { h: "이름", k: "user" }, { h: "구분", k: "type", cls: "dim" },
         { h: "기간", cls: "dim", f: function (r) { return esc(r.startDate) + " ~ " + esc(r.endDate); } },
@@ -706,7 +713,7 @@
         { k: "note", label: "내용" },
       ], function (d) { return write("fundincome_create", d, FK); });
     };
-    list("finance").then(function (d) {
+    fresh(list("finance")).then(function (d) {
       $("t1").innerHTML = table([
         { h: "과제", cls: "mono", f: function (r) { return '<a href="#/projects/' + r.id + '">' + esc(r.code) + "</a>"; } },
         { h: "과제명", k: "title" }, { h: "상태", f: function (r) { return B(r, "status"); } },
@@ -720,7 +727,7 @@
       '<p class="note">과제 미지정 — 입금 ' + esc(won(d.unassigned.income)) +
       " · 구매 지출 " + esc(won(d.unassigned.spentPurchase)) + "</p>";
     }).catch(showErr);
-    list("fundincomes").then(function (rows) {
+    fresh(list("fundincomes")).then(function (rows) {
       $("t2").innerHTML = table([
         { h: "일자", k: "date", cls: "mono" }, { h: "과제", k: "projectCode", cls: "dim" },
         { h: "내용", k: "note" }, { h: "금액", cls: "num", f: function (r) { return esc(won(r.amount)); } },
@@ -766,7 +773,7 @@
         { k: "project_id", label: "연계 과제", type: "select", opts: projectOpts },
       ], function (d) { return write("techtransfer_create", d, ["techtransfers"]); });
     };
-    list("publications").then(function (rows) {
+    fresh(list("publications")).then(function (rows) {
       $("t1").innerHTML = table([
         { h: "연도", k: "year", cls: "mono" }, { h: "제목", k: "title" },
         { h: "저널", k: "journal", cls: "dim" }, { h: "저자", k: "authors", cls: "dim" },
@@ -775,7 +782,7 @@
       ].concat(r2 ? [{ h: "", cls: "act", f: function (r) { return delBtn("publication_delete", r.id, ["publications"]); } }] : []),
         rows, "등록된 논문이 없습니다");
     }).catch(showErr);
-    list("patents").then(function (rows) {
+    fresh(list("patents")).then(function (rows) {
       $("t2").innerHTML = table([
         { h: "일자", k: "date", cls: "mono" }, { h: "발명 명칭", k: "title" },
         { h: "출원번호", k: "applicationNo", cls: "mono" }, { h: "등록번호", k: "registrationNo", cls: "mono" },
@@ -785,7 +792,7 @@
       ].concat(r2 ? [{ h: "", cls: "act", f: function (r) { return delBtn("patent_delete", r.id, ["patents"]); } }] : []),
         rows, "등록된 특허가 없습니다");
     }).catch(showErr);
-    list("techtransfers").then(function (rows) {
+    fresh(list("techtransfers")).then(function (rows) {
       $("t3").innerHTML = table([
         { h: "계약일", k: "contractDate", cls: "mono" }, { h: "기술명", k: "title" },
         { h: "이전 대상", k: "licensee", cls: "dim" },
@@ -815,7 +822,7 @@
         { k: "memo", label: "비고", type: "textarea" },
       ], function (d) { return write("research_create", d, K); });
     };
-    list("research").then(function (rows) {
+    fresh(list("research")).then(function (rows) {
       $("t").innerHTML = table([
         { h: "코드", k: "code", cls: "mono" }, { h: "프로젝트명", k: "title" },
         { h: "목표", k: "goal", cls: "dim" }, { h: "책임자", k: "leader", cls: "dim" },
@@ -846,7 +853,7 @@
         { k: "memo", label: "메모", type: "textarea" },
       ], function (d) { return write("purchase_create", d, K); });
     };
-    list("purchases").then(function (rows) {
+    fresh(list("purchases")).then(function (rows) {
       $("t").innerHTML = table([
         { h: "일자", k: "orderDate", cls: "mono" }, { h: "품목", k: "item" },
         { h: "구입처", k: "vendor", cls: "dim" }, { h: "비목", k: "category", cls: "dim" },
@@ -875,7 +882,7 @@
         { k: "status", label: "상태", type: "select", opts: ST.instrument, def: "정상" },
       ], function (d) { return write("instrument_create", d, K); });
     };
-    list("instruments").then(function (rows) {
+    fresh(list("instruments")).then(function (rows) {
       $("t").innerHTML = table([
         { h: "장비명", k: "name" }, { h: "모델", k: "model", cls: "dim" },
         { h: "관리자", k: "manager", cls: "dim" }, { h: "위치", k: "location", cls: "dim" },
@@ -906,7 +913,7 @@
         { k: "status", label: "상태", type: "select", opts: ST.sample, def: "보관" },
       ], function (d) { return write("sample_create", d, K); });
     };
-    list("samples").then(function (rows) {
+    fresh(list("samples")).then(function (rows) {
       $("t").innerHTML = table([
         { h: "시료번호", k: "code", cls: "mono" }, { h: "시료명", k: "name" },
         { h: "유형", k: "type", cls: "dim" }, { h: "출처", k: "source", cls: "dim" },
@@ -935,7 +942,7 @@
         { k: "result_summary", label: "결과 요약", type: "textarea" },
       ], function (d) { return write("experiment_create", d, K); });
     };
-    list("experiments").then(function (rows) {
+    fresh(list("experiments")).then(function (rows) {
       $("t").innerHTML = table([
         { h: "실험번호", k: "code", cls: "mono" }, { h: "제목", k: "title" },
         { h: "과제", k: "projectCode", cls: "dim" }, { h: "시료", k: "sampleCode", cls: "mono" },
