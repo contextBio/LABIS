@@ -7,6 +7,7 @@ import {
 import { saveMenuPermissions } from "@/lib/permActions";
 import { labMenuMatrix, LEVEL_LABEL } from "@/lib/perm";
 import { ADJUSTABLE_MENUS } from "@/lib/menus";
+import { MAX_LABS, LAB_LIMIT_MESSAGE } from "@/lib/labLimit";
 import { SheetSyncSection } from "@/components/SheetSyncSection";
 import { Badge, PageHeader, Section } from "@/components/ui";
 
@@ -43,6 +44,9 @@ export default async function AdminSettingsPage() {
     isPI ? labMenuMatrix(ctx.labId) : Promise.resolve([]),
   ]);
   const appUrl = process.env.APP_URL || "http://localhost:3100";
+  // 상한은 운영·휴면만 센다 — 폐쇄가 자리를 비우는 유일한 길이다
+  const usedSlots = labs.filter((l) => l.status !== "폐쇄").length;
+  const labsFull = usedSlots >= MAX_LABS;
 
   return (
     <div>
@@ -53,7 +57,7 @@ export default async function AdminSettingsPage() {
 
       {/* ── 1. 연구실 ── */}
       {isDeptAdmin && (
-        <Section title={`연구실 (${labs.length}개)`}>
+        <Section title={`연구실 (${usedSlots}/${MAX_LABS}개 사용)`}>
           <table className="tbl mb-4">
             <thead>
               <tr><th>연구실명</th><th>PI</th><th>호실</th><th>구성원</th><th>상태</th></tr>
@@ -82,15 +86,20 @@ export default async function AdminSettingsPage() {
               )}
             </tbody>
           </table>
-          <form action={createLab} className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <input name="name" required placeholder="연구실명 *" className="inp" />
-            <input name="pi_name" placeholder="PI 이름" className="inp" />
-            <input name="room" placeholder="호실" className="inp" />
-            <button className="btn justify-center">연구실 추가</button>
-          </form>
+          {labsFull ? (
+            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">{LAB_LIMIT_MESSAGE}</p>
+          ) : (
+            <form action={createLab} className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <input name="name" required placeholder="연구실명 *" className="inp" />
+              <input name="pi_name" placeholder="PI 이름" className="inp" />
+              <input name="room" placeholder="호실" className="inp" />
+              <button className="btn justify-center">연구실 추가</button>
+            </form>
+          )}
           <p className="mt-2 text-xs text-slate-400">
-            연구실 추가와 상태 변경은 학과관리자만 할 수 있습니다. 쓰지 않는 연구실은
-            <b> 폐쇄</b>로 바꾸세요 — 자료는 그대로 남습니다 (삭제 기능은 두지 않습니다).
+            연구실은 최대 {MAX_LABS}개입니다 (폐쇄한 것은 세지 않습니다). 추가와 상태 변경은
+            학과관리자만 할 수 있습니다. 쓰지 않는 연구실은 <b>폐쇄</b>로 바꾸세요 — 자료는
+            그대로 남습니다 (삭제 기능은 두지 않습니다).
           </p>
         </Section>
       )}
@@ -134,14 +143,22 @@ export default async function AdminSettingsPage() {
           </tbody>
         </table>
 
-        <form action={inviteMember} className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <input name="email" type="email" required placeholder="이메일 * (contextBio 계정)" className="inp col-span-2" />
-          <select name="role" className="inp">
-            <option value="MEMBER">연구원</option>
-            <option value="LAB_MANAGER">랩매니저</option>
-            {isPI && <option value="PI">연구책임자</option>}
-          </select>
-          <button className="btn justify-center">팀원 추가</button>
+        <form action={inviteMember} className="grid gap-3 md:grid-cols-4">
+          <textarea
+            name="emails"
+            required
+            rows={3}
+            placeholder={"이메일 * — 여러 명은 한 줄에 하나씩\nkim@example.com\n김승호 <seungho@example.com>"}
+            className="inp md:col-span-3"
+          />
+          <div className="flex flex-col gap-3">
+            <select name="role" className="inp">
+              <option value="MEMBER">연구원</option>
+              <option value="LAB_MANAGER">랩매니저</option>
+              {isPI && <option value="PI">연구책임자</option>}
+            </select>
+            <button className="btn justify-center">팀원 추가</button>
+          </div>
         </form>
 
         {invites.length > 0 && (
@@ -179,8 +196,11 @@ export default async function AdminSettingsPage() {
           </>
         )}
         <p className="mt-3 text-xs text-slate-400">
-          이미 contextBio 계정이 있는 이메일이면 바로 배정되고, 아니면 초대 링크가 만들어집니다 (7일 유효).
-          역할 변경·삭제는 연구책임자만 할 수 있습니다.
+          여러 명을 한 번에 넣을 수 있습니다 — 한 줄에 하나씩, <code className="rounded bg-slate-100 px-1">이름 &lt;메일&gt;</code> 형태도 됩니다.
+          이미 contextBio 계정이 있으면 바로 배정되고, 없으면 초대 링크가 만들어집니다 (7일 유효).
+          이미 대기 중인 초대는 건너뜁니다. 역할 변경·삭제는 연구책임자만 할 수 있습니다.
+          <br />
+          시트 가져오기는 <b>명부의 이름</b>으로 사람을 찾습니다 — 시트에 적힌 이름과 같아야 반영됩니다.
         </p>
       </Section>
 
