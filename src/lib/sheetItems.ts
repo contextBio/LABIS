@@ -9,7 +9,8 @@ import {
   importTab, importAll, exportAll, itemSrcKey, itemLogKey,
   ITEM_TABS, TABS, SPECS, type TabName,
 } from "./sheetSync";
-import { audit } from "./guard";
+// guard 가 아니라 audit.ts 에서 가져온다 — 이 모듈은 에이전트(tsx)도 쓴다
+import { audit } from "./audit";
 
 export type ItemLog = { at: string; lines: string[] };
 export type ItemStatus = {
@@ -30,11 +31,12 @@ export function parseTabs(csv: string): TabName[] {
   return picked.length ? picked : [...ITEM_TABS];
 }
 
+function stamp(): string {
+  return new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
+}
+
 async function writeItemLog(labId: number, tab: TabName, lines: string[]): Promise<ItemLog> {
-  const log: ItemLog = {
-    at: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
-    lines,
-  };
+  const log: ItemLog = { at: stamp(), lines };
   await setLabSetting(labId, itemLogKey(tab), JSON.stringify(log));
   return log;
 }
@@ -52,17 +54,47 @@ export async function readItemLog(labId: number, tab: TabName): Promise<ItemLog 
 /** 연결된 시트를 읽어 항목 DB에 반영한다. 실패해도 던지지 않고 로그로 남긴다. */
 export async function importItemSheet(
   labId: number,
-  userId: string,
-  tab: TabName
+  userId: string | null,
+  tab: TabName,
+  opts: { changedOnly?: boolean } = {}
 ): Promise<ItemLog> {
   try {
-    const lines = await importTab(labId, tab);
+    const { lines, changed } = await importTab(labId, tab, opts);
+    // 주기 실행이 '변경 없음' 으로 지난 반영 내역을 덮지 않게 한다
+    if (!changed && opts.changedOnly) {
+      return (await readItemLog(labId, tab)) ?? { at: stamp(), lines };
+    }
     await audit(userId, labId, "sync.import", "sheet", tab, { lines: lines.length });
     return await writeItemLog(labId, tab, ["✅ 가져오기 완료", ...lines]);
   } catch (e) {
     return await writeItemLog(labId, tab, [
       `❌ 가져오기 실패: ${e instanceof Error ? e.message : String(e)}`,
     ]);
+  }
+}
+
+/**
+ * 에이전트용 가져오기 — 사람이 누른 것과 구분해서 다룬다.
+ *
+ * 시트 내용이 그대로면 DB·로그를 아예 건드리지 않는다(changed=false). 반영했거나
+ * 실패했을 때만 항목 로그를 남겨, 화면에서도 마지막 결과를 그대로 볼 수 있게 한다.
+ */
+export async function syncItem(
+  labId: number,
+  tab: TabName,
+  opts: { changedOnly?: boolean } = {}
+): Promise<{ changed: boolean; lines: string[] }> {
+  try {
+    const { lines, changed } = await importTab(labId, tab, opts);
+    if (changed) {
+      await audit(null, labId, "sync.agent", "sheet", tab, { lines: lines.length });
+      await writeItemLog(labId, tab, ["✅ 에이전트 가져오기", ...lines]);
+    }
+    return { changed, lines };
+  } catch (e) {
+    const msg = `❌ 에이전트 가져오기 실패: ${e instanceof Error ? e.message : String(e)}`;
+    await writeItemLog(labId, tab, [msg]);
+    return { changed: false, lines: [msg] };
   }
 }
 
@@ -126,21 +158,22 @@ export async function readSyncLog(labId: number): Promise<ItemLog | null> {
 }
 
 async function writeSyncLog(labId: number, lines: string[]): Promise<ItemLog> {
-  const log: ItemLog = {
-    at: new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }),
-    lines,
-  };
+  const log: ItemLog = { at: stamp(), lines };
   await setLabSetting(labId, SYNC_LOG_KEY, JSON.stringify(log));
   return log;
 }
 
 export async function runImportAll(
   labId: number,
-  userId: string,
-  tabs?: TabName[]
+  userId: string | null,
+  tabs?: TabName[],
+  opts: { changedOnly?: boolean } = {}
 ): Promise<ItemLog> {
   try {
-    const lines = await importAll(labId, tabs);
+    const { lines, changed } = await importAll(labId, tabs, opts);
+    if (!changed && opts.changedOnly) {
+      return (await readSyncLog(labId)) ?? { at: stamp(), lines };
+    }
     await audit(userId, labId, "sync.import", "sheet", tabs?.join(",") || "all");
     return await writeSyncLog(labId, [
       `✅ 가져오기 (구글시트 → LABIS) 완료${tabs ? ` — ${tabs.join(", ")}` : ""}`,

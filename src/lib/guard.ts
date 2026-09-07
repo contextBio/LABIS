@@ -123,22 +123,6 @@ export async function requireLab(
   return { user, labId, labName: lab.name, role, level, levels };
 }
 
-export async function audit(
-  userId: string | null,
-  labId: number | null,
-  action: string,
-  entity: string,
-  entityId: string | number = "",
-  detail?: unknown
-) {
-  await prisma.auditLog.create({
-    data: {
-      userId,
-      labId,
-      action,
-      entity,
-      entityId: String(entityId),
-      detail: detail === undefined ? undefined : JSON.parse(JSON.stringify(detail)),
-    },
-  });
-}
+// 감사 로그는 audit.ts 로 옮겼다 — Next 런타임 밖(수집 에이전트)에서도 써야 해서다.
+// 기존 `import { audit } from "./guard"` 를 깨지 않도록 여기서 그대로 내보낸다.
+export { audit } from "./audit";

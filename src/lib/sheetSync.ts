@@ -1,11 +1,15 @@
+import { createHash } from "node:crypto";
+
 import { prisma } from "./prisma";
 import {
-  loadServiceAccount, getLabSetting, parseSheetRef, readSheetRows, writeSheetRows,
+  loadServiceAccount, getLabSetting,
+  setLabSetting, parseSheetRef, readSheetRows, writeSheetRows,
   type SheetRef,
 } from "./google";
 
 // 시트 탭 구성 (랩 단위 동기화)
-// 가져오기 방식 — upsert: 키 컬럼 기준 갱신, replace: 탭 내용으로 전체 교체
+// 가져오기 방식 — 코드가 있는 항목은 그 코드로, 없는 항목은 sourceKey(자연키)로 맞춘다.
+// 어느 쪽도 전체 교체를 하지 않는다 — 화면에서 직접 넣은 행을 지우지 않기 위해서다.
 // 인원 탭은 계정(로그인)과 결합되어 있어 내보내기 전용이다.
 
 export const TABS = [
@@ -128,6 +132,84 @@ type EntitySpec = {
   importRows: ((labId: number, rows: Row[], log: string[]) => Promise<void>) | null;
 };
 
+/** Prisma delegate 중 시트 동기화가 쓰는 최소 모양 */
+type SyncDelegate = {
+  findMany(args: { where: object; select?: object }): Promise<Record<string, unknown>[]>;
+  update(args: { where: { id: number }; data: object }): Promise<unknown>;
+  create(args: { data: object }): Promise<unknown>;
+  delete(args: { where: { id: number } }): Promise<unknown>;
+};
+
+/** 시트 한 줄을 다시 찾아낼 자연키 — 인덱스에 들어가므로 200자로 자른다 */
+function srcKey(...parts: (string | number | undefined)[]): string {
+  return parts.map((v) => String(v ?? "").trim()).join("|").slice(0, 200);
+}
+
+/**
+ * 시트 행을 sourceKey 기준으로 DB 에 맞춘다 — 예전의 '전체 삭제 후 재삽입'을 대신한다.
+ *
+ * 키가 있으면 갱신, 없으면 추가, 이번 시트에서 사라진 **시트 기원** 행만 지운다.
+ * sourceKey 가 빈 행(화면에서 직접 넣은 것)은 시트에 없어도 남는다 — 전체 교체를 버린
+ * 이유가 그것이다. 행 id 가 유지되므로 감사 로그와 화면의 조작 대상도 어긋나지 않는다.
+ * 같은 자연키가 여러 줄이면 등장 순서로 갈라(`키#2`) 둘 다 살린다.
+ */
+async function syncRows(
+  d: SyncDelegate,
+  scope: Record<string, unknown>,
+  keyed: { key: string; data: Record<string, unknown> }[],
+  label: string,
+  log: string[]
+): Promise<void> {
+  const now = new Date();
+  const rows = await d.findMany({ where: scope });
+  const mine = rows.filter((r) => r.sourceKey !== "");
+  const byKey = new Map(mine.map((m) => [String(m.sourceKey), Number(m.id)]));
+  // sourceKey 없는 행 — 화면에서 넣었거나, 전체 교체 시절에 시트에서 들어온 것들이다.
+  // 내용이 시트 줄과 완전히 같으면 그 행을 물려받아 중복도 유실도 만들지 않는다.
+  const orphans = rows.filter((r) => r.sourceKey === "");
+  const claimed = new Set<number>();
+  const sameRow = (row: Record<string, unknown>, data: Record<string, unknown>) =>
+    Object.keys(data).every((k) => row[k] === data[k]);
+
+  const bump = new Map<string, number>();
+  const seen = new Set<string>();
+  let up = 0;
+  let ins = 0;
+  let took = 0;
+  for (const { key, data } of keyed) {
+    const n = (bump.get(key) ?? 0) + 1;
+    bump.set(key, n);
+    const k = n === 1 ? key : `${key}#${n}`;
+    seen.add(k);
+    const id = byKey.get(k);
+    if (id !== undefined) {
+      await d.update({ where: { id }, data: { ...data, syncedAt: now } });
+      up++;
+      continue;
+    }
+    const orphan = orphans.find((o) => !claimed.has(Number(o.id)) && sameRow(o, data));
+    if (orphan) {
+      claimed.add(Number(orphan.id));
+      await d.update({ where: { id: Number(orphan.id) }, data: { sourceKey: k, syncedAt: now } });
+      took++;
+      continue;
+    }
+    await d.create({ data: { ...data, sourceKey: k, syncedAt: now } });
+    ins++;
+  }
+  let del = 0;
+  for (const m of mine) {
+    if (seen.has(String(m.sourceKey))) continue;
+    await d.delete({ where: { id: Number(m.id) } });
+    del++;
+  }
+  log.push(
+    `${label}: ${up}건 갱신, ${ins}건 추가` +
+      (took ? `, ${took}건 기존 행 인수` : "") +
+      (del ? `, ${del}건 삭제(시트에서 사라짐)` : "")
+  );
+}
+
 export const SPECS: Record<TabName, EntitySpec> = {
   인원: {
     headers: ["이름", "직급", "랩역할", "이메일", "연락처", "입사일", "상태"],
@@ -247,11 +329,13 @@ export const SPECS: Record<TabName, EntitySpec> = {
       return pms.map((pm) => [pm.project.code, pm.user.name, pm.role, pm.effortPct]);
     },
     importRows: async (labId, rows, log) => {
+      // (과제, 사용자) unique 가 있어 syncRows 대신 자연키 upsert 를 쓴다
       const names = await nameMap(labId);
       const codes = await codeMap(labId);
-      await prisma.projectMember.deleteMany({ where: { project: { labId } } });
-      let n = 0;
+      const now = new Date();
       const misses: string[] = [];
+      const seen: string[] = [];
+      let n = 0;
       for (const r of rows) {
         const pid = codes.get(r["과제번호"]);
         const uid = names.get(r["이름"]);
@@ -259,14 +343,29 @@ export const SPECS: Record<TabName, EntitySpec> = {
           if (r["과제번호"] || r["이름"]) misses.push(`${r["과제번호"]}/${r["이름"]}`);
           continue;
         }
+        const key = srcKey(r["과제번호"], r["이름"]);
+        seen.push(key);
+        const data = {
+          role: r["역할"] || "참여연구원",
+          effortPct: num(r["참여율"]),
+          sourceKey: key,
+          syncedAt: now,
+        };
         await prisma.projectMember.upsert({
           where: { projectId_userId: { projectId: pid, userId: uid } },
-          create: { projectId: pid, userId: uid, role: r["역할"] || "참여연구원", effortPct: num(r["참여율"]) },
-          update: { role: r["역할"] || "참여연구원", effortPct: num(r["참여율"]) },
+          create: { projectId: pid, userId: uid, ...data },
+          update: data,
         });
         n++;
       }
-      log.push(`참여연구원: 전체 교체, ${n}건 입력`);
+      const gone = await prisma.projectMember.findMany({
+        where: { project: { labId }, sourceKey: { not: "" }, NOT: { sourceKey: { in: seen } } },
+        select: { id: true },
+      });
+      for (const g of gone) await prisma.projectMember.delete({ where: { id: g.id } });
+      log.push(
+        `참여연구원: ${n}건 반영` + (gone.length ? `, ${gone.length}건 삭제(시트에서 사라짐)` : "")
+      );
       if (misses.length) log.push(`⚠ 매칭 실패(과제/이름): ${misses.join(", ")}`);
     },
   },
@@ -283,21 +382,32 @@ export const SPECS: Record<TabName, EntitySpec> = {
     },
     importRows: async (labId, rows, log) => {
       const codes = await codeMap(labId);
-      await prisma.milestone.deleteMany({ where: { project: { labId } } });
-      let n = 0;
       const misses: string[] = [];
+      const keyed: { key: string; data: Record<string, unknown> }[] = [];
       for (const r of rows) {
         const pid = codes.get(r["과제번호"]);
         if (!pid || !r["내용"]) {
           if (r["과제번호"]) misses.push(r["과제번호"]);
           continue;
         }
-        await prisma.milestone.create({
-          data: { projectId: pid, title: r["내용"], dueDate: r["기한"] || "", status: r["상태"] || "예정", memo: r["비고"] || "" },
+        keyed.push({
+          key: srcKey(r["과제번호"], r["내용"]),
+          data: {
+            projectId: pid,
+            title: r["내용"],
+            dueDate: r["기한"] || "",
+            status: r["상태"] || "예정",
+            memo: r["비고"] || "",
+          },
         });
-        n++;
       }
-      log.push(`마일스톤: 전체 교체, ${n}건 입력`);
+      await syncRows(
+        prisma.milestone as unknown as SyncDelegate,
+        { project: { labId } },
+        keyed,
+        "마일스톤",
+        log
+      );
       if (misses.length) log.push(`⚠ 매칭 실패 과제번호: ${[...new Set(misses)].join(", ")}`);
     },
   },
@@ -314,21 +424,33 @@ export const SPECS: Record<TabName, EntitySpec> = {
     },
     importRows: async (labId, rows, log) => {
       const codes = await codeMap(labId);
-      await prisma.budgetItem.deleteMany({ where: { project: { labId } } });
-      let n = 0;
       const misses: string[] = [];
+      const keyed: { key: string; data: Record<string, unknown> }[] = [];
       for (const r of rows) {
         const pid = codes.get(r["과제번호"]);
         if (!pid || !r["내역"]) {
           if (r["과제번호"]) misses.push(r["과제번호"]);
           continue;
         }
-        await prisma.budgetItem.create({
-          data: { projectId: pid, category: r["비목"] || "기타", item: r["내역"], amount: num(r["금액"]), spentDate: r["집행일"] || "", memo: r["비고"] || "" },
+        keyed.push({
+          key: srcKey(r["과제번호"], r["비목"], r["내역"], r["집행일"]),
+          data: {
+            projectId: pid,
+            category: r["비목"] || "기타",
+            item: r["내역"],
+            amount: num(r["금액"]),
+            spentDate: r["집행일"] || "",
+            memo: r["비고"] || "",
+          },
         });
-        n++;
       }
-      log.push(`예산집행: 전체 교체, ${n}건 입력`);
+      await syncRows(
+        prisma.budgetItem as unknown as SyncDelegate,
+        { project: { labId } },
+        keyed,
+        "예산집행",
+        log
+      );
       if (misses.length) log.push(`⚠ 매칭 실패 과제번호: ${[...new Set(misses)].join(", ")}`);
     },
   },
@@ -487,20 +609,22 @@ export const SPECS: Record<TabName, EntitySpec> = {
     },
     importRows: async (labId, rows, log) => {
       const codes = await codeMap(labId);
-      await prisma.publication.deleteMany({ where: { labId } });
-      let n = 0;
-      for (const r of rows) {
-        if (!r["제목"]) continue;
-        await prisma.publication.create({
+      const keyed = rows
+        .filter((r) => r["제목"])
+        .map((r) => ({
+          key: srcKey(r["제목"], r["연도"]),
           data: {
-            labId, title: r["제목"], year: r["연도"] || "", journal: r["저널"] || "",
-            authors: r["저자"] || "", doi: r["DOI"] || "",
-            projectId: codes.get(r["과제번호"]) ?? null, memo: r["비고"] || "",
+            labId,
+            title: r["제목"],
+            year: r["연도"] || "",
+            journal: r["저널"] || "",
+            authors: r["저자"] || "",
+            doi: r["DOI"] || "",
+            projectId: codes.get(r["과제번호"]) ?? null,
+            memo: r["비고"] || "",
           },
-        });
-        n++;
-      }
-      log.push(`논문: 전체 교체, ${n}건 입력`);
+        }));
+      await syncRows(prisma.publication as unknown as SyncDelegate, { labId }, keyed, "논문", log);
     },
   },
 
@@ -519,21 +643,23 @@ export const SPECS: Record<TabName, EntitySpec> = {
     },
     importRows: async (labId, rows, log) => {
       const codes = await codeMap(labId);
-      await prisma.patent.deleteMany({ where: { labId } });
-      let n = 0;
-      for (const r of rows) {
-        if (!r["발명명칭"]) continue;
-        await prisma.patent.create({
+      const keyed = rows
+        .filter((r) => r["발명명칭"])
+        .map((r) => ({
+          key: srcKey(r["출원번호"] || r["발명명칭"], r["일자"]),
           data: {
-            labId, title: r["발명명칭"], date: r["일자"] || "",
-            applicationNo: r["출원번호"] || "", registrationNo: r["등록번호"] || "",
-            inventors: r["발명자"] || "", status: r["상태"] || "출원",
-            projectId: codes.get(r["과제번호"]) ?? null, memo: r["비고"] || "",
+            labId,
+            title: r["발명명칭"],
+            date: r["일자"] || "",
+            applicationNo: r["출원번호"] || "",
+            registrationNo: r["등록번호"] || "",
+            inventors: r["발명자"] || "",
+            status: r["상태"] || "출원",
+            projectId: codes.get(r["과제번호"]) ?? null,
+            memo: r["비고"] || "",
           },
-        });
-        n++;
-      }
-      log.push(`특허: 전체 교체, ${n}건 입력`);
+        }));
+      await syncRows(prisma.patent as unknown as SyncDelegate, { labId }, keyed, "특허", log);
     },
   },
 
@@ -549,20 +675,27 @@ export const SPECS: Record<TabName, EntitySpec> = {
     },
     importRows: async (labId, rows, log) => {
       const codes = await codeMap(labId);
-      await prisma.techTransfer.deleteMany({ where: { labId } });
-      let n = 0;
-      for (const r of rows) {
-        if (!r["기술명"]) continue;
-        await prisma.techTransfer.create({
+      const keyed = rows
+        .filter((r) => r["기술명"])
+        .map((r) => ({
+          key: srcKey(r["기술명"], r["계약일"]),
           data: {
-            labId, title: r["기술명"], contractDate: r["계약일"] || "",
-            licensee: r["이전대상"] || "", amount: num(r["기술료"]),
-            projectId: codes.get(r["과제번호"]) ?? null, memo: r["비고"] || "",
+            labId,
+            title: r["기술명"],
+            contractDate: r["계약일"] || "",
+            licensee: r["이전대상"] || "",
+            amount: num(r["기술료"]),
+            projectId: codes.get(r["과제번호"]) ?? null,
+            memo: r["비고"] || "",
           },
-        });
-        n++;
-      }
-      log.push(`기술이전: 전체 교체, ${n}건 입력`);
+        }));
+      await syncRows(
+        prisma.techTransfer as unknown as SyncDelegate,
+        { labId },
+        keyed,
+        "기술이전",
+        log
+      );
     },
   },
 
@@ -582,22 +715,24 @@ export const SPECS: Record<TabName, EntitySpec> = {
     importRows: async (labId, rows, log) => {
       const names = await nameMap(labId);
       const codes = await codeMap(labId);
-      await prisma.purchase.deleteMany({ where: { labId } });
-      let n = 0;
-      for (const r of rows) {
-        if (!r["품목"]) continue;
-        await prisma.purchase.create({
+      const keyed = rows
+        .filter((r) => r["품목"])
+        .map((r) => ({
+          key: srcKey(r["품목"], r["일자"], num(r["금액"])),
           data: {
-            labId, item: r["품목"], orderDate: r["일자"] || "", vendor: r["구입처"] || "",
-            category: r["비목"] || "재료비", amount: num(r["금액"]),
+            labId,
+            item: r["품목"],
+            orderDate: r["일자"] || "",
+            vendor: r["구입처"] || "",
+            category: r["비목"] || "재료비",
+            amount: num(r["금액"]),
             requesterId: names.get(r["신청자"]) ?? null,
             projectId: codes.get(r["과제번호"]) ?? null,
-            status: r["상태"] || "신청", memo: r["비고"] || "",
+            status: r["상태"] || "신청",
+            memo: r["비고"] || "",
           },
-        });
-        n++;
-      }
-      log.push(`구매: 전체 교체, ${n}건 입력`);
+        }));
+      await syncRows(prisma.purchase as unknown as SyncDelegate, { labId }, keyed, "구매", log);
     },
   },
 
@@ -613,19 +748,25 @@ export const SPECS: Record<TabName, EntitySpec> = {
     },
     importRows: async (labId, rows, log) => {
       const codes = await codeMap(labId);
-      await prisma.fundIncome.deleteMany({ where: { labId } });
-      let n = 0;
-      for (const r of rows) {
-        if (!r["금액"]) continue;
-        await prisma.fundIncome.create({
+      const keyed = rows
+        .filter((r) => r["금액"])
+        .map((r) => ({
+          key: srcKey(r["일자"], r["과제번호"], r["내용"], num(r["금액"])),
           data: {
-            labId, date: r["일자"] || "", note: r["내용"] || "",
-            amount: num(r["금액"]), projectId: codes.get(r["과제번호"]) ?? null,
+            labId,
+            date: r["일자"] || "",
+            note: r["내용"] || "",
+            amount: num(r["금액"]),
+            projectId: codes.get(r["과제번호"]) ?? null,
           },
-        });
-        n++;
-      }
-      log.push(`연구비수입: 전체 교체, ${n}건 입력`);
+        }));
+      await syncRows(
+        prisma.fundIncome as unknown as SyncDelegate,
+        { labId },
+        keyed,
+        "연구비수입",
+        log
+      );
     },
   },
 
@@ -641,9 +782,9 @@ export const SPECS: Record<TabName, EntitySpec> = {
     },
     importRows: async (labId, rows, log) => {
       const names = await nameMap(labId);
-      await prisma.leave.deleteMany({ where: { labId } });
-      let n = 0, blank = 0;
       const misses: string[] = [];
+      const keyed: { key: string; data: Record<string, unknown> }[] = [];
+      let blank = 0;
       for (const r of rows) {
         if (!r["이름"]) {
           blank++;
@@ -654,16 +795,21 @@ export const SPECS: Record<TabName, EntitySpec> = {
           misses.push(r["이름"]);
           continue;
         }
-        await prisma.leave.create({
+        keyed.push({
+          key: srcKey(r["이름"], r["시작일"], r["구분"]),
           data: {
-            labId, userId: uid, type: r["구분"] || "연차",
-            startDate: r["시작일"] || "", endDate: r["종료일"] || r["시작일"] || "",
-            days: num(r["일수"]) || 1, reason: r["사유"] || "", status: r["상태"] || "신청",
+            labId,
+            userId: uid,
+            type: r["구분"] || "연차",
+            startDate: r["시작일"] || "",
+            endDate: r["종료일"] || r["시작일"] || "",
+            days: num(r["일수"]) || 1,
+            reason: r["사유"] || "",
+            status: r["상태"] || "신청",
           },
         });
-        n++;
       }
-      log.push(`휴가: 전체 교체, ${n}건 입력`);
+      await syncRows(prisma.leave as unknown as SyncDelegate, { labId }, keyed, "휴가", log);
       if (blank) log.push(`⚠ 휴가: 이름이 비어 있어 건너뛴 행 ${blank}개`);
       if (misses.length) {
         log.push(
@@ -687,6 +833,8 @@ export const ITEM_TABS: readonly TabName[] = IMPORT_ORDER;
 
 export const itemSrcKey = (tab: TabName) => `sheet_src_${tab}`;
 export const itemLogKey = (tab: TabName) => `sheet_log_${tab}`;
+/** 지난번에 가져온 시트 내용의 지문 — 에이전트가 헛일하지 않게 한다 */
+const itemHashKey = (tab: TabName) => `sheet_hash_${tab}`;
 
 /** 항목에 지정된 시트 주소 (원문 그대로 — 사용자가 붙여넣은 URL) */
 export async function getItemSheetUrl(labId: number, tab: TabName): Promise<string> {
@@ -706,35 +854,56 @@ async function resolveRef(labId: number, tab: TabName): Promise<SheetRef | null>
   return shared ? { id: shared, gid: null } : null;
 }
 
-/** 항목 하나를 시트에서 읽어 DB에 반영한다. */
-export async function importTab(labId: number, tab: TabName): Promise<string[]> {
+/**
+ * 항목 하나를 시트에서 읽어 DB에 반영한다.
+ *
+ * changedOnly=true 면 시트 내용이 지난번과 같을 때 DB 를 건드리지 않는다 — 주기적으로
+ * 도는 에이전트용이다. 사람이 화면에서 누른 '다시 가져오기'는 언제나 그대로 실행한다.
+ */
+export type ImportResult = {
+  lines: string[];
+  /** DB 를 실제로 건드렸는가 — 주기 실행이 헛 로그를 남기지 않게 하는 신호 */
+  changed: boolean;
+};
+
+export async function importTab(
+  labId: number,
+  tab: TabName,
+  opts: { changedOnly?: boolean } = {}
+): Promise<ImportResult> {
   const spec = SPECS[tab];
-  const log: string[] = [];
+  const lines: string[] = [];
   if (!spec.importRows) {
-    log.push(`${tab}: 계정과 결합된 내보내기 전용 항목입니다 — 건너뜀`);
-    return log;
+    lines.push(`${tab}: 계정과 결합된 내보내기 전용 항목입니다 — 건너뜀`);
+    return { lines, changed: false };
   }
   const ref = await resolveRef(labId, tab);
   if (!ref) throw new Error(`${tab}: 시트 주소가 설정되지 않았습니다.`);
   const sa = loadServiceAccount();
   const { rows, sheetTitle } = await readSheetRows(sa, ref, tab);
   if (rows.length < 2) {
-    log.push(`${tab}: '${sheetTitle}' 시트에 데이터가 없습니다 (건너뜀)`);
-    return log;
+    lines.push(`${tab}: '${sheetTitle}' 시트에 데이터가 없습니다 (건너뜀)`);
+    return { lines, changed: false };
+  }
+  const hash = createHash("sha1").update(JSON.stringify(rows)).digest("hex").slice(0, 16);
+  if (opts.changedOnly && (await getLabSetting(labId, itemHashKey(tab))) === hash) {
+    lines.push(`${tab}: 시트 내용 그대로 — 건너뜀`);
+    return { lines, changed: false };
   }
   const parsed = parseSheet(tab, spec.headers, rows);
-  log.push(
+  lines.push(
     `${tab}: '${sheetTitle}' 시트 ${parsed.headerRow}행을 헤더로 읽음 — 데이터 ${parsed.rows.length}행`
   );
   if (parsed.matched === 0) {
-    log.push(
+    lines.push(
       `⚠ ${tab}: 열 이름이 하나도 맞지 않습니다. 시트 헤더=[${parsed.rawHeaders.join(", ")}] · ` +
         `필요한 열=[${spec.headers.join(", ")}]`
     );
-    return log;
+    return { lines, changed: false };
   }
-  await spec.importRows(labId, parsed.rows, log);
-  return log;
+  await spec.importRows(labId, parsed.rows, lines);
+  await setLabSetting(labId, itemHashKey(tab), hash);
+  return { lines, changed: true };
 }
 
 export async function exportAll(labId: number): Promise<string[]> {
@@ -766,22 +935,28 @@ export async function exportAll(labId: number): Promise<string[]> {
   return log;
 }
 
-export async function importAll(labId: number, tabs?: TabName[]): Promise<string[]> {
+export async function importAll(
+  labId: number,
+  tabs?: TabName[],
+  opts: { changedOnly?: boolean } = {}
+): Promise<ImportResult> {
   const targets = IMPORT_ORDER.filter((t) => !tabs || tabs.includes(t));
   const log: string[] = [];
   if (!loadServiceAccount()) log.push("서비스 계정 없음 — 공개 시트 CSV 모드로 읽습니다.");
   if (tabs?.includes("인원")) log.push("인원: 내보내기 전용 항목입니다 (계정과 결합) — 건너뜀");
 
   let touched = 0;
+  let changed = 0;
   for (const tab of targets) {
     try {
-      const lines = await importTab(labId, tab);
-      log.push(...lines);
+      const r = await importTab(labId, tab, opts);
+      log.push(...r.lines);
       touched++;
+      if (r.changed) changed++;
     } catch (e) {
       log.push(`${tab}: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
   if (touched === 0) throw new Error("가져올 수 있는 시트가 없습니다. 항목별 시트 주소를 먼저 등록하세요.");
-  return log;
+  return { lines: log, changed: changed > 0 };
 }
