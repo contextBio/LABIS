@@ -49,12 +49,11 @@ export function loadServiceAccount(): ServiceAccount | null {
   return null;
 }
 
-async function accessToken(sa: ServiceAccount): Promise<string> {
-  const jwt = new JWT({
-    email: sa.client_email,
-    key: sa.private_key,
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-  });
+const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.metadata.readonly";
+
+async function accessToken(sa: ServiceAccount, scope = SHEETS_SCOPE): Promise<string> {
+  const jwt = new JWT({ email: sa.client_email, key: sa.private_key, scopes: [scope] });
   const { token } = await jwt.getAccessToken();
   if (!token) throw new Error("구글 액세스 토큰 발급 실패");
   return token;
@@ -290,4 +289,62 @@ export async function writeSheetRows(
   const title = pickSheet(sheets, ref, preferTitle)?.title ?? preferTitle;
   await writeTab(sa, ref.id, title, rows);
   return title;
+}
+
+// ---------- 구글 드라이브 폴더의 스프레드시트 목록 ----------
+
+const DRIVE_API = "https://www.googleapis.com/drive/v3";
+const SHEET_MIME = "application/vnd.google-apps.spreadsheet";
+
+export type DriveSheet = { id: string; name: string; modifiedTime: string; url: string };
+
+/** 드라이브 폴더 URL 에서 폴더 id 를 뽑는다 (id 를 그대로 넣어도 된다) */
+export function extractFolderId(input: string): string {
+  const s = (input ?? "").trim();
+  const m = s.match(/\/folders\/([a-zA-Z0-9_-]+)/) || s.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : s;
+}
+
+/** 실패 이유를 사람 말로 — 설정에서 무엇을 해야 하는지가 보이게 */
+function driveError(status: number, body: string): Error {
+  if (body.includes("SERVICE_DISABLED") || body.includes("accessNotConfigured")) {
+    return new Error(
+      "구글 클라우드 프로젝트에서 Drive API 가 꺼져 있습니다. 콘솔에서 'Google Drive API' 를 사용 설정하세요."
+    );
+  }
+  if (status === 404) {
+    return new Error("폴더를 찾을 수 없습니다. 폴더 주소가 맞는지, 서비스 계정에 공유했는지 확인하세요.");
+  }
+  if (status === 403) {
+    return new Error("폴더에 접근할 수 없습니다. 폴더를 서비스 계정 이메일에 (뷰어로) 공유하세요.");
+  }
+  return new Error(`Drive API ${status}: ${body.slice(0, 200)}`);
+}
+
+/** 폴더 안의 스프레드시트만, 최근 수정 순으로 */
+export async function listDriveSheets(
+  sa: ServiceAccount,
+  folderId: string
+): Promise<DriveSheet[]> {
+  const token = await accessToken(sa, DRIVE_SCOPE);
+  const q = encodeURIComponent(
+    `'${folderId}' in parents and mimeType='${SHEET_MIME}' and trashed=false`
+  );
+  const url =
+    `${DRIVE_API}/files?q=${q}` +
+    "&fields=files(id,name,modifiedTime,webViewLink)" +
+    "&orderBy=modifiedTime desc&pageSize=100" +
+    "&supportsAllDrives=true&includeItemsFromAllDrives=true";
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  const text = await res.text();
+  if (!res.ok) throw driveError(res.status, text);
+  const data = JSON.parse(text) as {
+    files?: { id: string; name: string; modifiedTime: string; webViewLink?: string }[];
+  };
+  return (data.files ?? []).map((f) => ({
+    id: f.id,
+    name: f.name,
+    modifiedTime: f.modifiedTime,
+    url: f.webViewLink || `https://docs.google.com/spreadsheets/d/${f.id}`,
+  }));
 }

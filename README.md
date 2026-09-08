@@ -57,6 +57,8 @@ npm run build && npm run start    # 프로덕션 (포트 3100)
   + REST 쪽 `apiMenuAllowed`. 화면: `/lab/permissions`, 새 화면 `#/settings`.
 - **모듈** (모두 랩 스코프):
   - 대시보드 `/` — 과제·연구비·시료·실험·인력·장비 요약
+    · 관리자 설정에 **구글 드라이브 폴더**를 지정하면 그 폴더의 스프레드시트 목록(이름·수정일·주소)이 여기 뜬다.
+    폴더를 서비스 계정에 뷰어로 공유해야 하고, 클라우드 프로젝트에서 **Drive API** 가 켜져 있어야 한다.
   - 과제관리 `/projects` — 과제·참여연구원·마일스톤·예산 집행
   - 프로젝트 `/research` — 수주 과제와 별개인 랩 내부 연구 단위 (책임자·기간·연계 과제)
   - LIMS `/lims/samples` `/lims/experiments` `/lims/instruments`

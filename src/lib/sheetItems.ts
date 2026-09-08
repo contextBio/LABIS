@@ -4,7 +4,10 @@
  * 기존 화면(서버 액션 syncActions.ts)과 새 화면(REST /api/v1/sheet)이 **같은 함수**를
  * 쓴다 — 주소 저장·가져오기·결과 로그가 두 화면에서 갈라지지 않도록.
  */
-import { getLabSetting, setLabSetting, parseSheetRef, loadServiceAccount } from "./google";
+import {
+  getLabSetting, setLabSetting, parseSheetRef, loadServiceAccount,
+  extractFolderId, listDriveSheets, type DriveSheet,
+} from "./google";
 import {
   importTab, importAll, exportAll, itemSrcKey, itemLogKey,
   ITEM_TABS, TABS, SPECS, type TabName,
@@ -195,5 +198,55 @@ export async function runExportAll(labId: number, userId: string): Promise<ItemL
     return await writeSyncLog(labId, [
       `❌ 내보내기 실패: ${e instanceof Error ? e.message : String(e)}`,
     ]);
+  }
+}
+
+// ---------- 구글 드라이브 폴더 (대시보드에 시트 목록을 띄운다) ----------
+
+const DRIVE_KEY = "drive_folder";
+
+export type DriveFolderView = {
+  folderId: string;
+  url: string;
+  files: DriveSheet[];
+  /** 읽지 못했으면 이유 — 화면에 그대로 보여 준다 */
+  error: string | null;
+};
+
+/** 대시보드가 매번 드라이브를 두드리지 않도록 잠깐 담아 둔다 */
+const driveCache = new Map<string, { at: number; files: DriveSheet[] }>();
+const DRIVE_TTL_MS = 60_000;
+
+export function getDriveFolderRaw(labId: number) {
+  return getLabSetting(labId, DRIVE_KEY);
+}
+
+export async function setDriveFolder(labId: number, userId: string, raw: string) {
+  const id = extractFolderId(raw);
+  await setLabSetting(labId, DRIVE_KEY, id);
+  driveCache.delete(id);
+  await audit(userId, labId, "drive.folder", "setting", DRIVE_KEY, { id });
+}
+
+/** 폴더가 설정돼 있으면 그 안의 스프레드시트 목록. 설정 전이면 null. */
+export async function labDriveSheets(labId: number): Promise<DriveFolderView | null> {
+  const folderId = extractFolderId(await getLabSetting(labId, DRIVE_KEY));
+  if (!folderId) return null;
+  const url = `https://drive.google.com/drive/folders/${folderId}`;
+
+  const sa = loadServiceAccount();
+  if (!sa) {
+    return { folderId, url, files: [], error: "서비스 계정이 없어 드라이브 폴더를 읽을 수 없습니다." };
+  }
+  const hit = driveCache.get(folderId);
+  if (hit && Date.now() - hit.at < DRIVE_TTL_MS) {
+    return { folderId, url, files: hit.files, error: null };
+  }
+  try {
+    const files = await listDriveSheets(sa, folderId);
+    driveCache.set(folderId, { at: Date.now(), files });
+    return { folderId, url, files, error: null };
+  } catch (e) {
+    return { folderId, url, files: [], error: e instanceof Error ? e.message : String(e) };
   }
 }

@@ -512,9 +512,31 @@
   VIEWS.dash = function (v) {
     v.innerHTML = head("대시보드 — " + labName(), "연구실 운영 현황 한눈에 보기") +
       '<div class="stats" id="statCards"></div>' +
+      '<div id="drvSec"></div>' +
       '<div class="grid2"><div><h2>다가오는 마일스톤</h2><div id="ms"></div></div>' +
       '<div><h2>최근 실험</h2><div id="ex"></div></div></div>' +
       '<h2>진행 중 과제</h2><div id="pj"></div>';
+    // 드라이브 폴더는 부가 정보 — 설정 전이거나 못 읽어도 대시보드는 그대로 뜬다
+    fresh(req("/api/v1/drive?lab=" + LAB)).then(function (d) {
+      if (!d.folder) return;
+      var f = d.folder;
+      setHtml("drvSec",
+        "<h2>구글 드라이브 시트 (" + f.files.length + "개)" +
+        ' <a class="btn sm" href="' + esc(f.url) + '" target="_blank" rel="noreferrer">폴더 열기 ↗</a></h2>' +
+        (f.error
+          ? '<p class="note bad">' + esc(f.error) + "</p>"
+          : table([
+              { h: "파일명", f: function (r) {
+                return '<a href="' + esc(r.url) + '" target="_blank" rel="noreferrer">' + esc(r.name) + "</a>";
+              } },
+              { h: "최근 수정", cls: "mono", f: function (r) { return esc(String(r.modifiedTime).slice(0, 10)); } },
+              { h: "시트 주소 (항목 연동에 붙여넣기)", cls: "act", f: function (r) {
+                return '<input readonly style="width:330px;font-size:11px" ' +
+                  'value="https://docs.google.com/spreadsheets/d/' + esc(r.id) + '">';
+              } },
+            ], f.files, "폴더에 스프레드시트가 없습니다")));
+    }).catch(function () { /* 폴더는 부가 정보라 조용히 넘긴다 */ });
+
     fresh(req("/api/v1/summary?lab=" + LAB)).then(function (d) {
       var s = d.stats;
       var cards = [
@@ -966,10 +988,42 @@
       '<button class="btn solid" data-all="import_all">⬇ 연결된 항목 전부 가져오기 (시트 → LABIS)</button>' +
       '<button class="btn" data-all="export_all" id="expBtn">⬆ 전부 내보내기 (LABIS → 시트)</button></div>' +
       '<div id="allLog"></div>' +
+      "<h3>드라이브 폴더 (대시보드 표시)</h3>" +
+      '<p class="note" style="margin-top:0">폴더 주소를 넣으면 그 안의 스프레드시트 목록이 ' +
+      "대시보드에 뜹니다. 폴더를 서비스 계정 이메일에 <b>뷰어</b>로 공유해야 읽을 수 있습니다.</p>" +
+      '<form class="assign" id="drvForm">' +
+      '<input id="drvFolder" placeholder="https://drive.google.com/drive/folders/… (또는 폴더 ID)">' +
+      '<button type="submit" class="btn solid">저장</button></form>' +
+      '<div id="drvMsg" class="note"></div>' +
       "<h3>시트 양식</h3>" +
       '<p class="note" style="margin-top:0">시트 <b>1행은 헤더</b>입니다. 아래 열 이름을 그대로 쓰고 순서는 상관없습니다. ' +
       "워크시트가 여럿인 파일은 주소를 <b>#gid= 까지 포함</b>해 붙여넣거나, 탭 이름을 항목 이름과 같게 하세요.</p>" +
       '<div id="guide"></div>';
+  }
+
+  function loadDriveFolder() {
+    fresh(req("/api/v1/drive?lab=" + LAB)).then(function (d) {
+      var input = $("drvFolder");
+      if (input) input.value = d.raw || "";
+      setHtml("drvMsg", !d.folder ? ""
+        : d.folder.error ? '<span style="color:var(--bad)">' + esc(d.folder.error) + "</span>"
+        : "폴더에서 스프레드시트 " + d.folder.files.length + "개를 읽었습니다.");
+      var form = $("drvForm");
+      if (!form || form.dataset.wired) return;
+      form.dataset.wired = "1";
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        setHtml("drvMsg", "저장하는 중…");
+        req("/api/v1/drive?lab=" + LAB, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folder: $("drvFolder").value }),
+        }).then(function () { CACHE = {}; route(); })
+          .catch(function (err) {
+            setHtml("drvMsg", '<span style="color:var(--bad)">실패: ' + esc(err.code || err.message) + "</span>");
+          });
+      });
+    }).catch(function () { /* 조용히 */ });
   }
 
   function loadSheetSection() {
@@ -1046,7 +1100,7 @@
         labPost({ action: "create", name: $("lbName").value, piName: $("lbPi").value, room: $("lbRoom").value });
       });
     }
-    if (sheetsOk) loadSheetSection();
+    if (sheetsOk) { loadSheetSection(); loadDriveFolder(); }
     if (rank() >= 3) {
       req("/api/v1/perm?lab=" + LAB)
         .then(function (d) { if (!stale(seq)) renderPerm(d.menus, d.rows); })
