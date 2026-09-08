@@ -1,17 +1,19 @@
 import Link from "next/link";
 import { requireLab } from "@/lib/guard";
 import { dashboardStats, upcomingMilestones, recentExperiments, listProjects } from "@/lib/queries";
+import { labDriveSheets } from "@/lib/sheetItems";
 import { Badge, PageHeader, Section, StatCard } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
 export default async function Dashboard() {
   const ctx = await requireLab();
-  const [stats, milestones, experiments, allProjects] = await Promise.all([
+  const [stats, milestones, experiments, allProjects, drive] = await Promise.all([
     dashboardStats(ctx.labId),
     upcomingMilestones(ctx.labId),
     recentExperiments(ctx.labId),
     listProjects(ctx.labId),
+    labDriveSheets(ctx.labId),
   ]);
   const projects = allProjects.filter((p) => p.status === "진행").slice(0, 5);
 
@@ -29,6 +31,51 @@ export default async function Dashboard() {
         <StatCard label="휴가 승인 대기" value={`${stats.pendingLeaves}건`} href="/hr" accent={stats.pendingLeaves > 0} />
         <StatCard label="점검 필요 장비" value={`${stats.instrumentsNeedCheck}대`} href="/lims/instruments" accent={stats.instrumentsNeedCheck > 0} />
       </div>
+
+      {drive && (
+        <Section
+          title={`구글 드라이브 시트 (${drive.files.length}개)`}
+          right={
+            <a href={drive.url} target="_blank" rel="noreferrer" className="btn-ghost">
+              폴더 열기 ↗
+            </a>
+          }
+        >
+          {drive.error ? (
+            <p className="text-sm text-amber-600">{drive.error}</p>
+          ) : (
+            <table className="tbl">
+              <thead>
+                <tr><th>파일명</th><th>최근 수정</th><th>시트 주소 (항목 연동에 붙여넣기)</th></tr>
+              </thead>
+              <tbody>
+                {drive.files.map((f) => (
+                  <tr key={f.id}>
+                    <td className="font-medium">
+                      <a href={f.url} target="_blank" rel="noreferrer" className="text-sky-600 hover:underline">
+                        {f.name}
+                      </a>
+                    </td>
+                    <td className="whitespace-nowrap font-mono text-xs text-slate-500">
+                      {f.modifiedTime.slice(0, 10)}
+                    </td>
+                    <td>
+                      <input
+                        readOnly
+                        value={`https://docs.google.com/spreadsheets/d/${f.id}`}
+                        className="inp !py-1 font-mono !text-[11px]"
+                      />
+                    </td>
+                  </tr>
+                ))}
+                {drive.files.length === 0 && (
+                  <tr><td colSpan={3} className="py-6 text-center text-slate-400">폴더에 스프레드시트가 없습니다</td></tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </Section>
+      )}
 
       <div className="grid gap-5 xl:grid-cols-2">
         <Section title="다가오는 마일스톤">

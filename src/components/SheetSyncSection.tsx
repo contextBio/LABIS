@@ -1,6 +1,7 @@
 import { getLabSetting, loadServiceAccount } from "@/lib/google";
 import { TABS, ITEM_TABS } from "@/lib/sheetSync";
-import { saveSpreadsheet, runExport, runImport } from "@/lib/syncActions";
+import { saveSpreadsheet, runExport, runImport, saveDriveFolder } from "@/lib/syncActions";
+import { getDriveFolderRaw } from "@/lib/sheetItems";
 import { SheetSources } from "@/components/SheetSources";
 import { Section } from "@/components/ui";
 
@@ -10,6 +11,7 @@ import { Section } from "@/components/ui";
  */
 export async function SheetSyncSection({ labId }: { labId: number }) {
   const spreadsheetId = await getLabSetting(labId, "spreadsheet_id");
+  const driveFolder = await getDriveFolderRaw(labId);
   const sa = loadServiceAccount();
   let log: { at: string; lines: string[] } | null = null;
   try {
@@ -73,6 +75,22 @@ export async function SheetSyncSection({ labId }: { labId: number }) {
           참여연구원·마일스톤·예산집행·휴가·논문·특허·기술이전·구매·연구비수입: 시트 내용으로 <b>전체 교체</b> ·{" "}
           인원: 계정과 결합되어 있어 <b>내보내기 전용</b> (팀원 추가는 위 팀원 구획에서)
         </p>
+      </Section>
+
+      <Section title="구글시트 — 드라이브 폴더 (대시보드 표시)">
+        <p className="mb-3 text-sm text-slate-600">
+          폴더 주소를 넣으면 그 안의 <b>스프레드시트 목록이 대시보드에 뜹니다</b>. 폴더를 서비스 계정
+          이메일에 <b>뷰어</b>로 공유해야 읽을 수 있습니다.
+        </p>
+        <form action={saveDriveFolder} className="flex gap-2">
+          <input
+            name="folder"
+            defaultValue={driveFolder}
+            placeholder="https://drive.google.com/drive/folders/... (또는 폴더 ID)"
+            className="inp max-w-xl"
+          />
+          <button className="btn">저장</button>
+        </form>
       </Section>
 
       <Section title="구글시트 — 랩 통합 스프레드시트 (선택)">

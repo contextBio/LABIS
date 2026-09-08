@@ -12,7 +12,9 @@
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "ingest": "tsx scripts/ingest-agent.ts",
-    "ingest:watch": "tsx scripts/ingest-agent.ts --watch"
+    "ingest:watch": "tsx scripts/ingest-agent.ts --watch",
+    "sheet": "tsx scripts/sheet-agent.ts",
+    "sheet:watch": "tsx scripts/sheet-agent.ts --watch"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

@@ -5,7 +5,7 @@ import { setLabSetting, extractSpreadsheetId } from "./google";
 import { TABS, type TabName } from "./sheetSync";
 import {
   isItemTab, importItemSheet, saveItemSheet as saveItemSheetFor,
-  runImportAll, runExportAll,
+  runImportAll, runExportAll, setDriveFolder,
 } from "./sheetItems";
 import { requireLab, audit } from "./guard";
 
@@ -37,6 +37,14 @@ export async function runItemImport(fd: FormData) {
   if (!isItemTab(tab)) return;
   await importItemSheet(ctx.labId, ctx.user.id, tab);
   revalidateFrom(fd);
+}
+
+/** 대시보드에 띄울 구글 드라이브 폴더 */
+export async function saveDriveFolder(fd: FormData) {
+  const ctx = await requireLab("LAB_MANAGER", "sheets", "edit");
+  await setDriveFolder(ctx.labId, ctx.user.id, String(fd.get("folder") ?? ""));
+  revalidatePath("/admin/settings");
+  revalidatePath("/");
 }
 
 // ---------- 랩 통합 스프레드시트 (항목별 주소가 없을 때의 기본값) ----------

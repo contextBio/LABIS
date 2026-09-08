@@ -80,6 +80,7 @@ model Membership {
   joinedAt DateTime @default(now()) @map("joined_at")
 
   @@unique([userId, labId])
+  @@index([labId])
   @@map("memberships")
 }
 
@@ -96,6 +97,8 @@ model Invitation {
   acceptedAt  DateTime? @map("accepted_at")
   createdAt   DateTime  @default(now()) @map("created_at")
 
+  @@index([labId])
+  @@index([invitedById])
   @@map("invitations")
 }
 
@@ -112,6 +115,7 @@ model AuditLog {
   at       DateTime @default(now())
 
   @@index([labId, at])
+  @@index([userId])
   @@map("audit_logs")
 }
 
@@ -147,6 +151,8 @@ model Project {
   researchProjects ResearchProject[]
 
   @@unique([labId, code])
+  @@index([labId, status])
+  @@index([piId])
   @@map("projects")
 }
 
@@ -170,6 +176,9 @@ model ResearchProject {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@unique([labId, code])
+  @@index([labId, startDate])
+  @@index([leaderId])
+  @@index([projectId])
   @@map("research_projects")
 }
 
@@ -186,19 +195,25 @@ model MenuPermission {
   level  String @default("edit")
 
   @@unique([labId, userId, menu])
+  @@index([userId])
   @@map("menu_permissions")
 }
 
 model ProjectMember {
-  id        Int     @id @default(autoincrement())
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  projectId Int     @map("project_id")
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  userId    String  @map("user_id")
-  role      String  @default("참여연구원")
-  effortPct Int     @default(0) @map("effort_pct")
+  id        Int       @id @default(autoincrement())
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId Int       @map("project_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String    @map("user_id")
+  role      String    @default("참여연구원")
+  effortPct Int       @default(0) @map("effort_pct")
+  /// 시트에서 온 행의 안정 키 — 앱에서 직접 넣은 행은 빈 값이고 동기화가 건드리지 않는다
+  sourceKey String    @default("") @map("source_key")
+  syncedAt  DateTime? @map("synced_at")
 
   @@unique([projectId, userId])
+  @@index([userId])
+  @@index([projectId, sourceKey])
   @@map("project_members")
 }
 
@@ -211,6 +226,12 @@ model Milestone {
   status    String  @default("예정")
   memo      String  @default("")
 
+  /// 시트에서 온 행의 안정 키 — 앱에서 직접 넣은 행은 빈 값이고 동기화가 건드리지 않는다
+  sourceKey String    @default("") @map("source_key")
+  syncedAt  DateTime? @map("synced_at")
+
+  @@index([projectId, dueDate])
+  @@index([projectId, sourceKey])
   @@map("milestones")
 }
 
@@ -224,6 +245,12 @@ model BudgetItem {
   spentDate String  @default("") @map("spent_date")
   memo      String  @default("")
 
+  /// 시트에서 온 행의 안정 키 — 앱에서 직접 넣은 행은 빈 값이고 동기화가 건드리지 않는다
+  sourceKey String    @default("") @map("source_key")
+  syncedAt  DateTime? @map("synced_at")
+
+  @@index([projectId, spentDate])
+  @@index([projectId, sourceKey])
   @@map("budget_items")
 }
 
@@ -249,6 +276,9 @@ model Sample {
   experiments     Experiment[]
 
   @@unique([labId, code])
+  @@index([labId, receivedDate])
+  @@index([projectId])
+  @@index([ownerId])
   @@map("samples")
 }
 
@@ -272,6 +302,10 @@ model Experiment {
   createdAt     DateTime @default(now()) @map("created_at")
 
   @@unique([labId, code])
+  @@index([labId, startDate])
+  @@index([projectId])
+  @@index([sampleId])
+  @@index([assigneeId])
   @@map("experiments")
 }
 
@@ -292,6 +326,8 @@ model Instrument {
   memo          String  @default("")
   shared        Boolean @default(false) // 학과 공용 장비 자리 (추후)
 
+  @@index([labId, name])
+  @@index([managerId])
   @@map("instruments")
 }
 
@@ -311,6 +347,13 @@ model Publication {
   memo      String   @default("")
   createdAt DateTime @default(now()) @map("created_at")
 
+  /// 시트에서 온 행의 안정 키 — 앱에서 직접 넣은 행은 빈 값이고 동기화가 건드리지 않는다
+  sourceKey String    @default("") @map("source_key")
+  syncedAt  DateTime? @map("synced_at")
+
+  @@index([labId, year])
+  @@index([projectId])
+  @@index([labId, sourceKey])
   @@map("publications")
 }
 
@@ -328,6 +371,13 @@ model Patent {
   projectId      Int?     @map("project_id")
   memo           String   @default("")
 
+  /// 시트에서 온 행의 안정 키 — 앱에서 직접 넣은 행은 빈 값이고 동기화가 건드리지 않는다
+  sourceKey String    @default("") @map("source_key")
+  syncedAt  DateTime? @map("synced_at")
+
+  @@index([labId, date])
+  @@index([projectId])
+  @@index([labId, sourceKey])
   @@map("patents")
 }
 
@@ -343,6 +393,13 @@ model TechTransfer {
   projectId    Int?     @map("project_id")
   memo         String   @default("")
 
+  /// 시트에서 온 행의 안정 키 — 앱에서 직접 넣은 행은 빈 값이고 동기화가 건드리지 않는다
+  sourceKey String    @default("") @map("source_key")
+  syncedAt  DateTime? @map("synced_at")
+
+  @@index([labId, contractDate])
+  @@index([projectId])
+  @@index([labId, sourceKey])
   @@map("tech_transfers")
 }
 
@@ -365,6 +422,14 @@ model Purchase {
   memo        String   @default("")
   createdAt   DateTime @default(now()) @map("created_at")
 
+  /// 시트에서 온 행의 안정 키 — 앱에서 직접 넣은 행은 빈 값이고 동기화가 건드리지 않는다
+  sourceKey String    @default("") @map("source_key")
+  syncedAt  DateTime? @map("synced_at")
+
+  @@index([labId, orderDate])
+  @@index([projectId])
+  @@index([requesterId])
+  @@index([labId, sourceKey])
   @@map("purchases")
 }
 
@@ -380,6 +445,13 @@ model FundIncome {
   amount    Int      @default(0)
   note      String   @default("")
 
+  /// 시트에서 온 행의 안정 키 — 앱에서 직접 넣은 행은 빈 값이고 동기화가 건드리지 않는다
+  sourceKey String    @default("") @map("source_key")
+  syncedAt  DateTime? @map("synced_at")
+
+  @@index([labId, date])
+  @@index([projectId])
+  @@index([labId, sourceKey])
   @@map("fund_incomes")
 }
 
@@ -399,6 +471,13 @@ model Leave {
   status    String   @default("신청")
   createdAt DateTime @default(now()) @map("created_at")
 
+  /// 시트에서 온 행의 안정 키 — 앱에서 직접 넣은 행은 빈 값이고 동기화가 건드리지 않는다
+  sourceKey String    @default("") @map("source_key")
+  syncedAt  DateTime? @map("synced_at")
+
+  @@index([labId, status, startDate])
+  @@index([userId])
+  @@index([labId, sourceKey])
   @@map("leaves")
 }
 

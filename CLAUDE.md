@@ -42,6 +42,21 @@
 DOM 에 쓸 때는 `setHtml(id, html)` 로 없는 자리를 조용히 넘긴다.
 **새 화면이나 새 조회를 추가하면 반드시 `fresh(list(...))` / `fresh(req(...))` 로 감쌀 것.**
 
+**시트·폴더 수집은 전체 교체를 하지 않는다.** 예전에는 9개 항목이
+`deleteMany({where:{labId}})` 로 랩의 행을 전부 지우고 다시 넣었다 — 사람이 화면에서 등록한
+구매·휴가·논문이 가져오기 한 번에 사라지고, 행 id 도 매번 바뀌어 감사 로그·화면 조작 대상이
+어긋났다. 지금은 `sheetSync.ts` 의 `syncRows()` 가 `sourceKey`(행 내용에서 만든 자연키)로
+갱신·추가하고, 시트에서 사라진 **시트 기원** 행만 지운다. **새 항목을 붙이거나 `importRows` 를
+고칠 때 `deleteMany` 를 쓰지 말 것.** 규칙 표는 [README](README.md#동기화-규칙-시트폴더-공통) 에 있다.
+
+**인덱스는 조회 패턴을 따른다.** 목록 화면은 모두 `where {labId} + orderBy(날짜/이름)` 이므로
+`@@index([labId, <정렬키>])` 형태로 둔다. 외래키 컬럼에도 인덱스를 둔다 — Postgres 는 FK 에
+자동으로 만들어 주지 않아서, 없으면 부모(과제·사용자) 삭제가 자식 테이블 풀스캔이 된다.
+
+**에이전트 코드는 `server-only` 모듈을 타면 안 된다.** `scripts/` 는 tsx 로 Next 런타임 밖에서
+돌아 `guard.ts`(쿠키·리다이렉트) 를 import 하는 순간 죽는다. 감사 로그를 `audit.ts` 로 떼어낸
+이유가 이것이다(`guard.ts` 는 재export 만 한다).
+
 **릴리스는 `scripts/release.sh` 로.** 손으로 빌드하지 않는다. 스크립트가 서버를 **먼저**
 내리는 것은 구동 중 `npm ci` 가 `node_modules` 를 지우다 `ENOTEMPTY` 로 죽기 때문이고,
 빌드가 고쳐 쓰는 `next-env.d.ts`·`tsconfig.json` 은 끝나고 원복한다. `.claude/` 는 세션 도구가
