@@ -81,12 +81,13 @@ async function api(
 export async function readTab(
   sa: ServiceAccount,
   spreadsheetId: string,
-  tab: string
+  tab: string,
+  range = "A1:Z10000"
 ): Promise<string[][]> {
   const data = await api(
     sa,
     "GET",
-    `${SHEETS_API}/${spreadsheetId}/values/${encodeURIComponent(`'${tab}'!A1:Z10000`)}?majorDimension=ROWS`
+    `${SHEETS_API}/${spreadsheetId}/values/${encodeURIComponent(`'${tab.replace(/'/g, "''")}'!${range}`)}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE`
   );
   return (data.values as string[][] | undefined) ?? [];
 }
