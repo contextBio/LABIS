@@ -101,6 +101,17 @@
          background:var(--bg);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
   .badge.op{background:#eff6ff;border-color:#bfdbfe;color:var(--brand)}
   .pos{color:var(--ok)} .neg{color:var(--bad)}
+  .finance-scroll{max-height:540px;overflow:auto;border:1px solid var(--line);background:var(--card)}
+  .finance-scroll table{min-width:1180px;table-layout:fixed}
+  .finance-scroll th{position:sticky;top:0;z-index:1;white-space:normal}
+  .finance-scroll th,.finance-scroll td{width:112px;overflow-wrap:anywhere;font-size:12px}
+  .finance-scroll th:first-child,.finance-scroll td:first-child{width:160px}
+  .finance-scroll th:last-child,.finance-scroll td:last-child{width:180px;white-space:normal}
+  .finance-scroll .balance{background:var(--bg);font-weight:700}
+  .finance-scroll .group-start td{border-top:2px solid var(--line)}
+  .finance-heading{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:24px 0 8px}
+  .finance-heading h2{margin:0}
+  .finance-heading small{color:var(--muted)}
   .grid2{display:grid;gap:18px}
   @media(min-width:1000px){.grid2{grid-template-columns:1fr 1fr}}
   .note{margin-top:22px;font-size:11.5px;color:var(--muted);line-height:1.7}
@@ -509,13 +520,45 @@
   var VIEWS = {};
 
   /* ── 대시보드 ── */
+  function loadFinanceSheet() {
+    var box = $("financeSheet"); if (!box) return;
+    var seq = RENDER_SEQ;
+    box.innerHTML = '<h2>연구비 현황</h2><p role="status">불러오는 중…</p>';
+    fresh(req("/api/v1/finance-sheet?lab=" + LAB)).then(function (d) {
+      if (!d.sheet) { setHtml("financeSheet", ""); return; }
+      var s = d.sheet, rows = s.rows || [];
+      var html = '<div class="finance-heading"><h2>연구비 현황</h2><small>' + esc(s.title) + ' · 원</small>' +
+        '<a class="btn sm" href="' + esc(s.url) + '" target="_blank" rel="noreferrer">원본 시트</a>' +
+        '<button class="btn sm" id="financeRefresh" title="연구비 새로고침" aria-label="연구비 새로고침">↻</button></div>';
+      if (!rows.length) html += '<p role="status">등록된 연구비 내역이 없습니다.</p>';
+      else {
+        html += '<div class="finance-scroll" tabindex="0" role="region" aria-label="연구비 현황"><table><thead><tr>' +
+          rows[0].map(function (c) { return '<th scope="col">' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>';
+        html += rows.slice(1).map(function (row) {
+          var cls = row[1] === '잔액' ? 'balance' : row[1] === '최초예산' ? 'group-start' : '';
+          return '<tr class="' + cls + '">' + row.map(function (c, i) {
+            return '<td' + (i >= 2 && i <= 8 ? ' class="num"' : '') + '>' + esc(c) + '</td>';
+          }).join('') + '</tr>';
+        }).join('') + '</tbody></table></div>';
+      }
+      setHtml("financeSheet", html);
+      var refresh = $("financeRefresh"); if (refresh) refresh.onclick = loadFinanceSheet;
+    }).catch(function (e) {
+      if (stale(seq)) return;
+      if (e.code === "menu_forbidden") { setHtml("financeSheet", ""); return; }
+      setHtml("financeSheet", '<h2>연구비 현황</h2><p class="note bad" role="alert">연구비 시트를 불러오지 못했습니다.</p><button class="btn sm" id="financeRetry">다시 시도</button>');
+      var retry = $("financeRetry"); if (retry) retry.onclick = loadFinanceSheet;
+    });
+  }
   VIEWS.dash = function (v) {
     v.innerHTML = head("대시보드 — " + labName(), "연구실 운영 현황 한눈에 보기") +
       '<div class="stats" id="statCards"></div>' +
+      '<section id="financeSheet" aria-label="연구비 현황"></section>' +
       '<div id="drvSec"></div>' +
       '<div class="grid2"><div><h2>다가오는 마일스톤</h2><div id="ms"></div></div>' +
       '<div><h2>최근 실험</h2><div id="ex"></div></div></div>' +
       '<h2>진행 중 과제</h2><div id="pj"></div>';
+    loadFinanceSheet();
     // 드라이브 폴더는 부가 정보 — 설정 전이거나 못 읽어도 대시보드는 그대로 뜬다
     fresh(req("/api/v1/drive?lab=" + LAB)).then(function (d) {
       if (!d.folder) return;
