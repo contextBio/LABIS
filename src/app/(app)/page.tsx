@@ -34,7 +34,11 @@ export default async function Dashboard() {
 
       {drive && (
         <Section
-          title={`구글 드라이브 시트 (${drive.files.length}개)`}
+          title={
+            drive.name
+              ? `구글 드라이브 — ${drive.name} (시트 ${drive.files.length}개)`
+              : "구글 드라이브 폴더"
+          }
           right={
             <a href={drive.url} target="_blank" rel="noreferrer" className="btn-ghost">
               폴더 열기 ↗
