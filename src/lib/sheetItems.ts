@@ -207,6 +207,8 @@ const DRIVE_KEY = "drive_folder";
 
 export type DriveFolderView = {
   folderId: string;
+  /** 드라이브에 있는 폴더 이름 (못 읽었으면 빈 문자열) */
+  name: string;
   url: string;
   files: DriveSheet[];
   /** 읽지 못했으면 이유 — 화면에 그대로 보여 준다 */
@@ -214,7 +216,7 @@ export type DriveFolderView = {
 };
 
 /** 대시보드가 매번 드라이브를 두드리지 않도록 잠깐 담아 둔다 */
-const driveCache = new Map<string, { at: number; files: DriveSheet[] }>();
+const driveCache = new Map<string, { at: number; name: string; files: DriveSheet[] }>();
 const DRIVE_TTL_MS = 60_000;
 
 export function getDriveFolderRaw(labId: number) {
@@ -236,17 +238,20 @@ export async function labDriveSheets(labId: number): Promise<DriveFolderView | n
 
   const sa = loadServiceAccount();
   if (!sa) {
-    return { folderId, url, files: [], error: "서비스 계정이 없어 드라이브 폴더를 읽을 수 없습니다." };
+    return { folderId, name: "", url, files: [], error: "서비스 계정이 없어 드라이브 폴더를 읽을 수 없습니다." };
   }
   const hit = driveCache.get(folderId);
   if (hit && Date.now() - hit.at < DRIVE_TTL_MS) {
-    return { folderId, url, files: hit.files, error: null };
+    return { folderId, name: hit.name, url, files: hit.files, error: null };
   }
   try {
-    const files = await listDriveSheets(sa, folderId);
-    driveCache.set(folderId, { at: Date.now(), files });
-    return { folderId, url, files, error: null };
+    const { name, files } = await listDriveSheets(sa, folderId);
+    driveCache.set(folderId, { at: Date.now(), name, files });
+    return { folderId, name, url, files, error: null };
   } catch (e) {
-    return { folderId, url, files: [], error: e instanceof Error ? e.message : String(e) };
+    return {
+      folderId, name: "", url, files: [],
+      error: e instanceof Error ? e.message : String(e),
+    };
   }
 }

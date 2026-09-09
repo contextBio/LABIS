@@ -295,6 +295,7 @@ export async function writeSheetRows(
 
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 const SHEET_MIME = "application/vnd.google-apps.spreadsheet";
+const FOLDER_MIME = "application/vnd.google-apps.folder";
 
 export type DriveSheet = { id: string; name: string; modifiedTime: string; url: string };
 
@@ -312,21 +313,39 @@ function driveError(status: number, body: string): Error {
       "구글 클라우드 프로젝트에서 Drive API 가 꺼져 있습니다. 콘솔에서 'Google Drive API' 를 사용 설정하세요."
     );
   }
-  if (status === 404) {
-    return new Error("폴더를 찾을 수 없습니다. 폴더 주소가 맞는지, 서비스 계정에 공유했는지 확인하세요.");
-  }
-  if (status === 403) {
-    return new Error("폴더에 접근할 수 없습니다. 폴더를 서비스 계정 이메일에 (뷰어로) 공유하세요.");
+  if (status === 404 || status === 403) {
+    return new Error(
+      "폴더를 볼 수 없습니다 — 드라이브에서 이 폴더를 서비스 계정 이메일에 '뷰어'로 공유하세요. " +
+        "(주소가 맞는지도 확인해 주세요)"
+    );
   }
   return new Error(`Drive API ${status}: ${body.slice(0, 200)}`);
 }
 
-/** 폴더 안의 스프레드시트만, 최근 수정 순으로 */
+/**
+ * 폴더 안의 스프레드시트만, 최근 수정 순으로.
+ *
+ * 폴더를 먼저 한 번 짚고 간다 — 공유되지 않은 폴더를 목록으로 물으면 드라이브는
+ * 오류가 아니라 **빈 목록**을 준다. 그대로 두면 '파일 0개'로 보여서, 폴더가 비었는지
+ * 공유가 안 됐는지 구분이 안 된다 (2026-09-09 실측).
+ */
 export async function listDriveSheets(
   sa: ServiceAccount,
   folderId: string
-): Promise<DriveSheet[]> {
+): Promise<{ name: string; files: DriveSheet[] }> {
   const token = await accessToken(sa, DRIVE_SCOPE);
+
+  const metaRes = await fetch(
+    `${DRIVE_API}/files/${encodeURIComponent(folderId)}?fields=id,name,mimeType&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }
+  );
+  const metaText = await metaRes.text();
+  if (!metaRes.ok) throw driveError(metaRes.status, metaText);
+  const meta = JSON.parse(metaText) as { name?: string; mimeType?: string };
+  if (meta.mimeType && meta.mimeType !== FOLDER_MIME) {
+    throw new Error("폴더가 아닙니다 — 드라이브 폴더 주소를 넣으세요.");
+  }
+
   const q = encodeURIComponent(
     `'${folderId}' in parents and mimeType='${SHEET_MIME}' and trashed=false`
   );
@@ -341,10 +360,13 @@ export async function listDriveSheets(
   const data = JSON.parse(text) as {
     files?: { id: string; name: string; modifiedTime: string; webViewLink?: string }[];
   };
-  return (data.files ?? []).map((f) => ({
-    id: f.id,
-    name: f.name,
-    modifiedTime: f.modifiedTime,
-    url: f.webViewLink || `https://docs.google.com/spreadsheets/d/${f.id}`,
-  }));
+  return {
+    name: meta.name ?? "",
+    files: (data.files ?? []).map((f) => ({
+      id: f.id,
+      name: f.name,
+      modifiedTime: f.modifiedTime,
+      url: f.webViewLink || `https://docs.google.com/spreadsheets/d/${f.id}`,
+    })),
+  };
 }
