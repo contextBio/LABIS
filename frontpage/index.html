@@ -67,7 +67,16 @@
   .btn.danger:hover{border-color:var(--bad);color:var(--bad)}
   .btn.sm{padding:4px 9px;font-size:11.5px}
   .shell{display:flex;min-height:calc(100vh - 57px)}
-  nav.side{width:var(--sidebar-width,186px);flex:0 0 auto;border-right:1px solid var(--line);background:var(--card);padding:12px 0}
+  .side-panel{width:var(--sidebar-width,186px);flex:0 0 auto;border-right:1px solid var(--line);background:var(--card)}
+  nav.side{width:100%;padding:0 0 12px}
+  .side-tools{display:flex;justify-content:flex-end;padding:8px 10px 4px}
+  .side-toggle{display:flex;align-items:center;justify-content:center;width:30px;height:30px;padding:6px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--muted);cursor:pointer}
+  .side-toggle svg{width:16px;height:16px}
+  .side-toggle:hover{color:var(--brand);border-color:var(--brand)}
+  .side-toggle:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+  #sidebarShow{display:none;flex:0 0 30px;align-self:flex-start;margin:10px 0 0 8px}
+  .sidebar-collapsed #sidePanel,.sidebar-collapsed #sideResizer{display:none}
+  .sidebar-collapsed #sidebarShow{display:flex}
   .side-resizer{position:relative;flex:0 0 8px;cursor:col-resize;touch-action:none;outline:none}
   .side-resizer::after{content:"";position:absolute;top:0;bottom:0;left:3px;width:2px;background:transparent}
   .side-resizer:hover::after,.side-resizer:focus-visible::after,.side-resizer.dragging::after{background:var(--brand)}
@@ -224,7 +233,17 @@
     <select id="dashLab" title="연구실 전환"></select>
   </header>
   <div class="shell">
-    <nav class="side" id="sideNav"></nav>
+    <aside class="side-panel" id="sidePanel" aria-label="LABIS 메뉴">
+      <div class="side-tools"><button type="button" class="side-toggle" id="sidebarHide"
+        aria-label="사이드바 숨기기" title="사이드바 숨기기" aria-controls="sidePanel" aria-expanded="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16m7-12-4 4 4 4"/></svg>
+      </button></div>
+      <nav class="side" id="sideNav"></nav>
+    </aside>
+    <button type="button" class="side-toggle" id="sidebarShow" aria-label="사이드바 펼치기"
+      title="사이드바 펼치기" aria-controls="sidePanel" aria-expanded="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16m4-12 4 4-4 4"/></svg>
+    </button>
     <div class="side-resizer" id="sideResizer" role="separator" tabindex="0"
          aria-label="사이드바 너비 조절" aria-orientation="vertical" aria-controls="sideNav"
          aria-valuemin="160" aria-valuemax="360" aria-valuenow="186"
@@ -280,7 +299,7 @@
     handle.addEventListener("pointerdown", function (e) {
       if (!e.isPrimary || e.button !== 0 || pointer !== null) return;
       e.preventDefault(); pointer = e.pointerId; startX = e.clientX;
-      startWidth = nav.getBoundingClientRect().width;
+      startWidth = ($("sidePanel") || nav).getBoundingClientRect().width;
       handle.focus(); handle.setPointerCapture(pointer);
       handle.classList.add("dragging"); document.documentElement.classList.add("sidebar-resizing");
     });
@@ -307,6 +326,27 @@
     apply(preferred, false);
   }
   initSidebarResize();
+
+  function initSidebarCollapse() {
+    var hide = $("sidebarHide"), show = $("sidebarShow");
+    if (!hide || !show) return;
+    var key = "labis.sidebarCollapsed";
+    function apply(collapsed, interactive) {
+      document.documentElement.classList.toggle("sidebar-collapsed", collapsed);
+      hide.setAttribute("aria-expanded", String(!collapsed));
+      show.setAttribute("aria-expanded", String(!collapsed));
+      if (interactive) {
+        try { localStorage.setItem(key, collapsed ? "1" : "0"); } catch (_) {}
+        (collapsed ? show : hide).focus();
+      }
+    }
+    hide.addEventListener("click", function () { apply(true, true); });
+    show.addEventListener("click", function () { apply(false, true); });
+    var saved = false;
+    try { saved = localStorage.getItem(key) === "1"; } catch (_) {}
+    apply(saved, false);
+  }
+  initSidebarCollapse();
 
   /** 화면 세대 — route() 마다 올라간다. 늦게 온 응답이 다음 화면의 DOM 을 건드리지 못하게. */
   var RENDER_SEQ = 0;
