@@ -7,7 +7,7 @@ export const DASHBOARD_SHEETS = {
 export type SheetKind = keyof typeof DASHBOARD_SHEETS;
 type Value = { stringValue?: string; numberValue?: number; boolValue?: boolean; formulaValue?: string };
 type Range = { startRowIndex?: number; endRowIndex?: number; startColumnIndex?: number; endColumnIndex?: number };
-type Cell = { userEnteredValue?: Value; formattedValue?: string; dataValidation?: unknown };
+type Cell = { userEnteredValue?: Value; formattedValue?: string; dataValidation?: unknown; textFormatRuns?: unknown[]; hyperlink?: string };
 type Grid = { startRow?: number; startColumn?: number; rowData?: { values?: Cell[] }[] };
 type Sheet = { properties: { sheetId: number; title: string; gridProperties: { rowCount: number } }; merges?: Range[]; protectedRanges?: { range: Range; warningOnly?: boolean; requestingUserCanEdit?: boolean }[]; data?: Grid[] };
 function contains(range: Range, row: number, col: number) {
@@ -16,6 +16,7 @@ function contains(range: Range, row: number, col: number) {
 export function cellEditReason(cell: Cell, sheet: Sheet, row: number, col: number) {
   if (!cell.userEnteredValue && cell.formattedValue) return '연동·배열 수식 계산값';
   if (cell.userEnteredValue?.formulaValue !== undefined) return '수식 자동 계산';
+  if (cell.hyperlink || cell.textFormatRuns?.length) return '링크·부분 서식: 원본 시트에서 수정';
   if (cell.dataValidation) return '입력 규칙 적용: 원본 시트에서 수정';
   if (sheet.merges?.some(r => contains(r,row,col))) return '병합 셀: 원본 시트에서 수정';
   if (sheet.protectedRanges?.some(p => !p.warningOnly && !p.requestingUserCanEdit && contains(p.range,row,col))) return '보호된 셀';

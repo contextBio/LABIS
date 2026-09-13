@@ -374,7 +374,7 @@ export async function listDriveSheets(
 
 // Cell-level dashboard editing; callers supply server-owned workbook IDs and ranges.
 export async function readDashboardCells(sa: ServiceAccount, id: string, ranges: string[]) {
-  const query = new URLSearchParams({ fields: 'sheets(properties(sheetId,title,gridProperties),merges,protectedRanges(range,warningOnly,requestingUserCanEdit),data(startRow,startColumn,rowData(values(userEnteredValue,formattedValue,dataValidation))))' });
+  const query = new URLSearchParams({ fields: 'sheets(properties(sheetId,title,gridProperties),merges,protectedRanges(range,warningOnly,requestingUserCanEdit),data(startRow,startColumn,rowData(values(userEnteredValue,formattedValue,dataValidation,textFormatRuns,hyperlink))))' });
   ranges.forEach(range => query.append('ranges', range));
   return api(sa, 'GET', `${SHEETS_API}/${id}?${query}`);
 }

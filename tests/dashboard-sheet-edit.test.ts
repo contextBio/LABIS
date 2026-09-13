@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { cellEditReason, sheetUpdateRequests, type sheetEditSnapshot } from '../src/lib/dashboardSheetEdit';
 const metadata = {properties:{sheetId:1,title:'test',gridProperties:{rowCount:10}},merges:[{startRowIndex:2,endRowIndex:4,startColumnIndex:0,endColumnIndex:1}],protectedRanges:[{range:{startRowIndex:2,endRowIndex:3,startColumnIndex:6,endColumnIndex:7}}]};
 assert.equal(cellEditReason({userEnteredValue:{formulaValue:'=SUM(A1:A2)'}},metadata,2,1),'수식 자동 계산');
+assert.ok(cellEditReason({hyperlink:'https://example.com'},metadata,2,1));
+assert.ok(cellEditReason({textFormatRuns:[{startIndex:0}]},metadata,2,1));
 assert.ok(cellEditReason({dataValidation:{strict:true}},metadata,2,1));
 assert.ok(cellEditReason({},metadata,2,0));
 assert.ok(cellEditReason({},metadata,2,6));
