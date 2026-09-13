@@ -112,6 +112,23 @@
   .finance-heading{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:24px 0 8px}
   .finance-heading h2{margin:0}
   .finance-heading small{color:var(--muted)}
+  .finance-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:14px 0}
+  .finance-toolbar label{margin:0}.finance-toolbar small{color:var(--muted)}
+  .finance-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:10px}
+  .finance-kpis .v{font-size:18px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+  .finance-emphasis{border-color:var(--brand)}.finance-emphasis .v{color:var(--brand)}
+  .finance-caption{font-size:12px;color:var(--muted);line-height:1.8}
+  .finance-alert{border:1px solid var(--accent);border-radius:10px;padding:12px;color:var(--accent);margin:14px 0}
+  .finance-alert summary,.finance-source summary{cursor:pointer;font-weight:600}
+  #financeSheet h3{font-size:14px;margin:20px 0 10px}
+  #financeSheet .grid2>div{min-width:0}
+  .finance-bars{max-height:390px;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .finance-bar-row{margin-bottom:17px}.finance-bar-row:last-child{margin-bottom:0}
+  .finance-bar-row>div:first-child{display:flex;justify-content:space-between;gap:10px;font-size:12px}
+  .finance-bar-row small{font-size:11px;color:var(--muted)}
+  .finance-track{height:7px;background:var(--line);border-radius:8px;margin:7px 0;overflow:hidden}
+  .finance-track>div{height:100%;background:var(--brand);border-radius:8px}
+  .finance-source{margin-top:18px}.finance-source summary{margin-bottom:10px;font-size:12px;color:var(--muted)}
   .grid2{display:grid;gap:18px}
   @media(min-width:1000px){.grid2{grid-template-columns:1fr 1fr}}
   .note{margin-top:22px;font-size:11.5px;color:var(--muted);line-height:1.7}
@@ -520,29 +537,107 @@
   var VIEWS = {};
 
   /* ── 대시보드 ── */
+  // Sheet A:J: A = project/note, B = row type, C:H = categories, I = source total.
+  // Keep source totals: the unpaid payroll column is not necessarily included in I.
+  function parseFinanceRows(rows) {
+    function amount(value) {
+      var s = String(value == null ? '' : value).trim().replace(/[,₩\s]/g, '');
+      if (!s || s === '-') return null;
+      if (!/^-?\d+(\.\d+)?$/.test(s)) return null;
+      var n = Number(s); return Number.isFinite(n) ? n : null;
+    }
+    var result = { summary: { values: {} }, projects: [], categories: (rows[0] || []).slice(2, 8), warnings: [] };
+    var current = result.summary;
+    rows.slice(1).forEach(function (row, index) {
+      var type = String(row[1] || '').trim();
+      if (type === '최초예산' && String(row[0] || '').trim()) {
+        current = { name: String(row[0]).trim(), values: {}, note: '', review: '', row: index + 2 };
+        result.projects.push(current);
+      }
+      if (['최초예산', '예산', '이월', '집행액', '집행예정액', '잔액'].indexOf(type) < 0) return;
+      // The ending-this-year subtotal is separate from the overall balance.
+      if (current === result.summary && type === '잔액' && row[0] !== '전체') return;
+      current.values[type] = { total: amount(row[8]), categories: Array.from({ length: 6 }, function (_, i) { return amount(row[i + 2]); }) };
+      if (current !== result.summary) {
+        if (type === '잔액') current.note = String(row[0] || '');
+        if (String(row[9] || '').trim() === '불일치') current.review = '불일치';
+        else if (!current.review && String(row[9] || '').trim() === 'OK') current.review = 'OK';
+      }
+    });
+    result.projects.forEach(function (p) {
+      if (p.review === '불일치') result.warnings.push(p.name + ': 재료비 장부 불일치');
+      var balance = p.values['잔액'];
+      if (balance) balance.categories.forEach(function (n, i) {
+        if (n !== null && n < 0) result.warnings.push(p.name + ': ' + result.categories[i] + ' 잔액 음수');
+      });
+    });
+    return result;
+  }
+  function financeValue(group, key) {
+    return group.values[key] ? group.values[key].total : null;
+  }
+  function financeMoney(n) { return n === null ? '—' : n.toLocaleString('ko-KR') + '원'; }
+  function financeRate(group) {
+    var budget = financeValue(group, '예산'), carry = financeValue(group, '이월'), spent = financeValue(group, '집행액');
+    return budget !== null && carry !== null && spent !== null && budget + carry > 0 ? spent / (budget + carry) * 100 : null;
+  }
+  function financeDashboard(s, selected) {
+    var data = parseFinanceRows(s.rows || []);
+    var group = selected === '' ? data.summary : data.projects[Number(selected)] || data.summary;
+    var keys = ['예산', '이월', '집행액', '집행예정액', '잔액'];
+    var html = '<div class="finance-heading"><h2>연구비 현황</h2><small>' + esc(s.title) + '</small>' +
+      '<a class="btn sm" href="' + esc(s.url) + '" target="_blank" rel="noreferrer">원본 시트 ↗</a>' +
+      '<button class="btn sm" id="financeRefresh">새로고침</button></div>';
+    if (!(s.rows || []).length) return html + '<p role="status">등록된 연구비 내역이 없습니다.</p>';
+    html += '<div class="finance-toolbar"><label for="financeProject">과제 선택</label><select id="financeProject"><option value="">전체 과제</option>' +
+      data.projects.map(function (p, i) { return '<option value="' + i + '"' + (String(i) === selected ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') +
+      '</select><small>' + data.projects.length + '개 과제 · 조회 ' + esc(s.fetchedAt ? new Date(s.fetchedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '시각 미제공') + '</small></div>';
+    html += '<div class="finance-kpis">' + keys.map(function (key) {
+      var value = financeValue(group, key);
+      return '<div class="stat' + (key === '잔액' ? ' finance-emphasis' : '') + '"><div class="k">' + key + '</div><div class="v' + (value !== null && value < 0 ? ' neg' : '') + '">' + esc(financeMoney(value)) + '</div></div>';
+    }).join('') + '</div>';
+    var rate = financeRate(group);
+    html += '<p class="finance-caption">집행률 <strong>' + (rate === null ? '—' : rate.toFixed(1) + '%') + '</strong> · 집행액 ÷ (예산 + 이월). 잔액과 합계는 원본 시트 계산값이며, 집행예정액은 별도 표시합니다.</p>';
+    if (data.warnings.length) html += '<details class="finance-alert"><summary>확인 필요 ' + data.warnings.length + '건</summary><ul>' + data.warnings.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul></details>';
+    html += '<div class="grid2"><div><h3>과제별 집행률</h3><div class="finance-bars">';
+    var projects = selected === '' ? data.projects : [group];
+    projects.forEach(function (p) {
+      var r = financeRate(p);
+      html += '<div class="finance-bar-row"><div><strong>' + esc(p.name) + '</strong><span>' + (r === null ? '—' : r.toFixed(1) + '%') + '</span></div>' +
+        '<div class="finance-track" aria-hidden="true"><div style="width:' + Math.max(0, Math.min(100, r || 0)) + '%"></div></div>' +
+        '<small>잔액 ' + esc(financeMoney(financeValue(p, '잔액'))) + (p.note ? ' · ' + esc(p.note) : '') + '</small></div>';
+    });
+    html += '</div></div><div><h3>비목별 현황</h3><div class="tblwrap"><table><thead><tr><th>비목</th><th>집행액</th><th>집행예정액</th><th>잔액</th></tr></thead><tbody>';
+    data.categories.forEach(function (name, i) {
+      html += '<tr><th scope="row">' + esc(name) + '</th>' + ['집행액', '집행예정액', '잔액'].map(function (key) {
+        var n = group.values[key] ? group.values[key].categories[i] : null;
+        return '<td class="num' + (n !== null && n < 0 ? ' neg' : '') + '">' + esc(financeMoney(n)) + '</td>';
+      }).join('') + '</tr>';
+    });
+    html += '</tbody></table></div><p class="finance-caption">단위: 원 · 미지급인건비는 원본 합계 포함 여부를 유지합니다. 빈 값은 —로 표시합니다.</p></div></div>';
+    html += '<h3>과제별 연구비 상세</h3><div class="tblwrap"><table><thead><tr><th>과제</th>' + keys.map(function (k) { return '<th>' + k + '</th>'; }).join('') + '<th>장부 검토</th></tr></thead><tbody>';
+    projects.forEach(function (p) {
+      html += '<tr><th scope="row">' + esc(p.name) + '</th>' + keys.map(function (k) { var n = financeValue(p, k); return '<td class="num' + (n !== null && n < 0 ? ' neg' : '') + '">' + esc(financeMoney(n)) + '</td>'; }).join('') + '<td class="' + (p.review === '불일치' ? 'neg' : '') + '">' + esc(p.review || '—') + '</td></tr>';
+    });
+    html += '</tbody></table></div><details class="finance-source"><summary>원본 A–J열 보기</summary><div class="finance-scroll" tabindex="0" role="region" aria-label="연구비 원본"><table><thead><tr>' +
+      s.rows[0].map(function (c) { return '<th scope="col">' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>';
+    html += s.rows.slice(1).map(function (row) { return '<tr class="' + (row[1] === '잔액' ? 'balance' : row[1] === '최초예산' ? 'group-start' : '') + '">' + row.map(function (c, i) { return '<td' + (i >= 2 && i <= 8 ? ' class="num"' : '') + '>' + esc(c) + '</td>'; }).join('') + '</tr>'; }).join('');
+    return html + '</tbody></table></div></details>';
+  }
   function loadFinanceSheet() {
     var box = $("financeSheet"); if (!box) return;
     var seq = RENDER_SEQ;
     box.innerHTML = '<h2>연구비 현황</h2><p role="status">불러오는 중…</p>';
     fresh(req("/api/v1/finance-sheet?lab=" + LAB)).then(function (d) {
       if (!d.sheet) { setHtml("financeSheet", ""); return; }
-      var s = d.sheet, rows = s.rows || [];
-      var html = '<div class="finance-heading"><h2>연구비 현황</h2><small>' + esc(s.title) + ' · 원</small>' +
-        '<a class="btn sm" href="' + esc(s.url) + '" target="_blank" rel="noreferrer">원본 시트</a>' +
-        '<button class="btn sm" id="financeRefresh" title="연구비 새로고침" aria-label="연구비 새로고침">↻</button></div>';
-      if (!rows.length) html += '<p role="status">등록된 연구비 내역이 없습니다.</p>';
-      else {
-        html += '<div class="finance-scroll" tabindex="0" role="region" aria-label="연구비 현황"><table><thead><tr>' +
-          rows[0].map(function (c) { return '<th scope="col">' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>';
-        html += rows.slice(1).map(function (row) {
-          var cls = row[1] === '잔액' ? 'balance' : row[1] === '최초예산' ? 'group-start' : '';
-          return '<tr class="' + cls + '">' + row.map(function (c, i) {
-            return '<td' + (i >= 2 && i <= 8 ? ' class="num"' : '') + '>' + esc(c) + '</td>';
-          }).join('') + '</tr>';
-        }).join('') + '</tbody></table></div>';
+      var s = d.sheet;
+      function render(selected) {
+        if (stale(seq)) return;
+        setHtml("financeSheet", financeDashboard(s, selected));
+        var refresh = $("financeRefresh"); if (refresh) refresh.onclick = loadFinanceSheet;
+        var select = $("financeProject"); if (select) select.onchange = function () { render(select.value); };
       }
-      setHtml("financeSheet", html);
-      var refresh = $("financeRefresh"); if (refresh) refresh.onclick = loadFinanceSheet;
+      render('');
     }).catch(function (e) {
       if (stale(seq)) return;
       if (e.code === "menu_forbidden") { setHtml("financeSheet", ""); return; }
