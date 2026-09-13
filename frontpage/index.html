@@ -142,6 +142,8 @@
   .finance-bar-row small{font-size:11px;color:var(--muted)}
   .finance-track{height:7px;background:var(--line);border-radius:8px;margin:7px 0;overflow:hidden}
   .finance-track>div{height:100%;background:var(--brand);border-radius:8px}
+  #operationsSheet td{min-width:80px;max-width:260px;overflow-wrap:anywhere}
+  #operationsSheet table{min-width:850px}
   .finance-source{margin-top:18px}.finance-source summary{margin-bottom:10px;font-size:12px;color:var(--muted)}
   .grid2{display:grid;gap:18px}
   @media(min-width:1000px){.grid2{grid-template-columns:1fr 1fr}}
@@ -756,15 +758,64 @@
       var retry = $("financeRetry"); if (retry) retry.onclick = loadFinanceSheet;
     });
   }
+  function operationsDashboard(s, team, query) {
+    var tasks = s.tasks || [], teams = Array.from(new Set(tasks.map(function (t) { return t.team; }).filter(Boolean)));
+    var members = new Set(); tasks.forEach(function (t) { t.members.forEach(function (m) { members.add(m); }); });
+    var filtered = tasks.filter(function (t) {
+      return (!team || t.team === team) && (!query || [t.team, t.category, t.leader, t.task, t.members.join(' '), t.resource, t.description].join(' ').toLowerCase().includes(query.toLowerCase()));
+    });
+    var html = '<div class="finance-heading"><h2>연구실 운영관리</h2><small>' + esc(s.title) + '</small>' +
+      '<a class="btn sm" href="' + esc(s.url) + '" target="_blank" rel="noreferrer">원본 시트 ↗</a><button class="btn sm" id="operationsRefresh">새로고침</button></div>';
+    html += '<div class="stats">' + [['팀', teams.length + '개'], ['업무', tasks.length + '건'], ['담당자', members.size + '명'], ['담당자 미기재', tasks.filter(function (t) { return !t.members.length; }).length + '건']].map(function (p) {
+      return '<div class="stat"><div class="k">' + esc(p[0]) + '</div><div class="v">' + esc(p[1]) + '</div></div>';
+    }).join('') + '</div><p class="finance-caption">시트 업데이트 표기: ' + esc(s.updatedLabel || '미기재') + ' · 조회: ' + esc(new Date(s.fetchedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })) + '</p>';
+    html += '<div class="finance-toolbar"><label for="operationsTeam">팀</label><select id="operationsTeam"><option value="">전체 팀</option>' + teams.map(function (name) { return '<option' + (team === name ? ' selected' : '') + ' value="' + esc(name) + '">' + esc(name) + ' (' + tasks.filter(function (t) { return t.team === name; }).length + ')</option>'; }).join('') +
+      '</select><label for="operationsQuery">업무·담당자 검색</label><input id="operationsQuery" type="search" value="' + esc(query) + '" placeholder="업무, 담당자, 자료명" style="max-width:100%"><span role="status">' + filtered.length + '건</span></div>';
+    html += '<div class="tblwrap"><table><thead><tr><th>팀 / 업무</th><th>주요업무</th><th>팀장</th><th>담당자</th><th>관리자료</th><th>내용</th><th>검토 메모 (원문)</th></tr></thead><tbody>';
+    filtered.forEach(function (t) {
+      var resource = esc(t.resource || '—');
+      if (/^https?:\/\/[^\s]+$/i.test(t.resource)) resource = '<a target="_blank" rel="noreferrer" href="' + esc(t.resource) + '">' + esc(t.resource) + ' ↗</a>';
+      html += '<tr><td>' + esc(t.team) + '<br><small>' + esc(t.category) + '</small></td><td>' + esc(t.task) + '</td><td>' + esc(t.leader || '—') + '</td><td>' + esc(t.members.join(', ') || '미기재') + '</td><td>' + resource + '</td><td>' + esc(t.description || '—') + '</td><td style="white-space:pre-line">' + esc(t.review || '—') + '</td></tr>';
+    });
+    if (!filtered.length) html += '<tr><td colspan="7" class="empty-row">표시할 업무가 없습니다.</td></tr>';
+    return html + '</tbody></table></div><p class="finance-caption">담당자는 팀원 열 기준이며 빈 칸은 미기재로 표시합니다. 검토 메모는 원문 기록으로, 현재 완료 상태를 뜻하지 않습니다.</p>';
+  }
+  function loadOperationsSheet() {
+    var box = $('operationsSheet'); if (!box) return;
+    var seq = RENDER_SEQ;
+    box.innerHTML = '<h2>연구실 운영관리</h2><p role="status">불러오는 중…</p>';
+    fresh(req('/api/v1/operations-sheet?lab=' + LAB)).then(function (d) {
+      if (!d.sheet) { setHtml('operationsSheet', ''); return; }
+      function render(team, query, focusSearch) {
+        if (stale(seq)) return;
+        setHtml('operationsSheet', operationsDashboard(d.sheet, team, query));
+        $('operationsRefresh').onclick = loadOperationsSheet;
+        $('operationsTeam').onchange = function () { render(this.value, $('operationsQuery').value, false); };
+        var input = $('operationsQuery');
+        // Do not rebuild the input while Korean IME composition is active.
+        input.oninput = function (e) { if (!e.isComposing) render(team, this.value, true); };
+        input.oncompositionend = function () { render(team, this.value, true); };
+        if (focusSearch) input.focus();
+      }
+      render('', '', false);
+    }).catch(function (e) {
+      if (stale(seq)) return;
+      if (e.code === 'menu_forbidden') { setHtml('operationsSheet', ''); return; }
+      setHtml('operationsSheet', '<h2>연구실 운영관리</h2><p class="note bad" role="alert">운영관리 시트를 불러오지 못했습니다.</p><button class="btn sm" id="operationsRetry">다시 시도</button>');
+      var retry = $('operationsRetry'); if (retry) retry.onclick = loadOperationsSheet;
+    });
+  }
   VIEWS.dash = function (v) {
     v.innerHTML = head("대시보드 — " + labName(), "연구실 운영 현황 한눈에 보기") +
       '<div class="stats" id="statCards"></div>' +
       '<section id="financeSheet" aria-label="연구비 현황"></section>' +
+      '<section id="operationsSheet" aria-label="연구실 운영관리"></section>' +
       '<div id="drvSec"></div>' +
       '<div class="grid2"><div><h2>다가오는 마일스톤</h2><div id="ms"></div></div>' +
       '<div><h2>최근 실험</h2><div id="ex"></div></div></div>' +
       '<h2>진행 중 과제</h2><div id="pj"></div>';
     loadFinanceSheet();
+    loadOperationsSheet();
     // 드라이브 폴더는 부가 정보 — 설정 전이거나 못 읽어도 대시보드는 그대로 뜬다
     fresh(req("/api/v1/drive?lab=" + LAB)).then(function (d) {
       if (!d.folder) return;
