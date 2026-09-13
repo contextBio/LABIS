@@ -371,3 +371,20 @@ export async function listDriveSheets(
     })),
   };
 }
+
+// Cell-level dashboard editing; callers supply server-owned workbook IDs and ranges.
+export async function readDashboardCells(sa: ServiceAccount, id: string, ranges: string[]) {
+  const query = new URLSearchParams({ fields: 'sheets(properties(sheetId,title,gridProperties),merges,protectedRanges(range,warningOnly,requestingUserCanEdit),data(startRow,startColumn,rowData(values(userEnteredValue,formattedValue,dataValidation))))' });
+  ranges.forEach(range => query.append('ranges', range));
+  return api(sa, 'GET', `${SHEETS_API}/${id}?${query}`);
+}
+export async function updateDashboardCells(sa: ServiceAccount, id: string, requests: unknown[]) {
+  return api(sa, 'POST', `${SHEETS_API}/${id}:batchUpdate`, { requests });
+}
+export async function dashboardCanEdit(sa: ServiceAccount, id: string): Promise<boolean> {
+  const token = await accessToken(sa, DRIVE_SCOPE);
+  const res = await fetch(`${DRIVE_API}/files/${id}?fields=capabilities(canEdit)`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+  if (!res.ok) throw new Error('권한을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+  const data = await res.json();
+  return data.capabilities?.canEdit === true;
+}

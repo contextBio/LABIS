@@ -3,8 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const html = fs.readFileSync(require('node:path').join(__dirname, '../frontpage/index.html'), 'utf8');
-const code = html.slice(html.indexOf('  function parseFinanceRows('), html.indexOf('  function loadFinanceSheet('));
-const ctx = vm.createContext({ esc: s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) });
+const code = html.slice(html.indexOf('  function parseFinanceRows('), html.indexOf('  var SHEET_EDITOR_SEQ'));
+const ctx = vm.createContext({ sheetEditButton: () => '', esc: s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])) });
 vm.runInContext(code, ctx);
 const row = (name, type, total, category = '0', review = '') => [name, type, '', category, '0', '0', '0', '0', total, review];
 const fixture = [

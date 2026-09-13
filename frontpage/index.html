@@ -538,7 +538,7 @@
       };
     });
   }
-  function closeForm() { $("modalWrap").style.display = "none"; $("modal").innerHTML = ""; }
+  function closeForm() { SHEET_EDITOR_SEQ++; $("modalWrap").style.display = "none"; $("modal").innerHTML = ""; }
   $("modalWrap").addEventListener("click", function (e) { if (e.target === this) closeForm(); });
 
   /* ── 행 단위 조작 셀 ── */
@@ -700,7 +700,7 @@
     var keys = ['예산', '이월', '집행액', '집행예정액', '잔액'];
     var html = '<div class="finance-heading"><h2>연구비 현황</h2><small>' + esc(s.title) + '</small>' +
       '<a class="btn sm" href="' + esc(s.url) + '" target="_blank" rel="noreferrer">원본 시트 ↗</a>' +
-      '<button class="btn sm" id="financeRefresh">새로고침</button></div>';
+      '<button class="btn sm" id="financeRefresh">새로고침</button><small id="financeSyncStatus" role="status">30초 자동 연동</small></div>';
     if (!(s.rows || []).length) return html + '<p role="status">등록된 연구비 내역이 없습니다.</p>';
     html += '<div class="finance-toolbar"><label for="financeProject">과제 선택</label><select id="financeProject"><option value="">전체 과제</option>' +
       data.projects.map(function (p, i) { return '<option value="' + i + '"' + (String(i) === selected ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') +
@@ -732,27 +732,101 @@
     projects.forEach(function (p) {
       html += '<tr><th scope="row">' + esc(p.name) + '</th>' + keys.map(function (k) { var n = financeValue(p, k); return '<td class="num' + (n !== null && n < 0 ? ' neg' : '') + '">' + esc(financeMoney(n)) + '</td>'; }).join('') + '<td class="' + (p.review === '불일치' ? 'neg' : '') + '">' + esc(p.review || '—') + '</td></tr>';
     });
-    html += '</tbody></table></div><details class="finance-source"><summary>원본 A–J열 보기</summary><div class="finance-scroll" tabindex="0" role="region" aria-label="연구비 원본"><table><thead><tr>' +
-      s.rows[0].map(function (c) { return '<th scope="col">' + esc(c) + '</th>'; }).join('') + '</tr></thead><tbody>';
-    html += s.rows.slice(1).map(function (row) { return '<tr class="' + (row[1] === '잔액' ? 'balance' : row[1] === '최초예산' ? 'group-start' : '') + '">' + row.map(function (c, i) { return '<td' + (i >= 2 && i <= 8 ? ' class="num"' : '') + '>' + esc(c) + '</td>'; }).join('') + '</tr>'; }).join('');
+    html += '</tbody></table></div><details class="finance-source"><summary>원본 A–J열 보기 · 수정</summary><div class="finance-scroll" tabindex="0" role="region" aria-label="연구비 원본"><table><thead><tr>' +
+      s.rows[0].map(function (c) { return '<th scope="col">' + esc(c) + '</th>'; }).join('') + '<th>수정</th></tr></thead><tbody>';
+    html += s.rows.slice(1).map(function (row, index) { return '<tr class="' + (row[1] === '잔액' ? 'balance' : row[1] === '최초예산' ? 'group-start' : '') + '">' + row.map(function (c, i) { return '<td' + (i >= 2 && i <= 8 ? ' class="num"' : '') + '>' + esc(c) + '</td>'; }).join('') + '<td>' + sheetEditButton('finance', index + 2) + '</td></tr>'; }).join('');
     return html + '</tbody></table></div></details>';
   }
-  function loadFinanceSheet() {
-    var box = $("financeSheet"); if (!box) return;
+  var SHEET_EDITOR_SEQ = 0, DASHBOARD_POLL = null, FINANCE_BUSY = false, OPERATIONS_BUSY = false;
+  function sheetEditable(kind) { return typeof rank === 'function' && rank() >= 2 && mlevel(kind === 'finance' ? 'finance' : 'hr') === 'edit'; }
+  function sheetEditButton(kind, row, label) {
+    return sheetEditable(kind) ? '<button type="button" class="btn sm" data-sheet-edit="' + kind + '" data-sheet-row="' + row + '">' + esc(label || '수정') + '</button>' : '';
+  }
+  function wireSheetEdits(container) {
+    var box = $(container); if (!box) return;
+    box.querySelectorAll('[data-sheet-edit]').forEach(function (button) {
+      button.onclick = function () { openSheetEditor(button.dataset.sheetEdit, Number(button.dataset.sheetRow)); };
+    });
+  }
+  function openSheetEditor(kind, row) {
+    var seq = RENDER_SEQ, lab = LAB, editorSeq = ++SHEET_EDITOR_SEQ;
+    var path = '/api/v1/dashboard-sheet-edit?lab=' + lab + '&kind=' + kind + '&row=' + row;
+    var m = $('modal'); $('modalWrap').style.display = 'flex';
+    m.innerHTML = '<h3>시트 수정</h3><p role="status">최신 내용을 확인하는 중…</p><button type="button" class="btn" id="sheetEditCancel">닫기</button>';
+    $('sheetEditCancel').onclick = closeForm;
+    fresh(req(path)).then(function (d) {
+      if (stale(seq) || editorSeq !== SHEET_EDITOR_SEQ || $('modalWrap').style.display === 'none') return;
+      var editor = d.editor;
+      m.innerHTML = '<h3>' + esc(editor.title) + ' · ' + editor.row + '행 수정</h3>' +
+        '<p class="finance-caption">저장하면 원본 구글 시트에 바로 반영됩니다. 수식·병합·입력 규칙이 있는 셀은 원본 시트에서 수정해 주세요.</p>' +
+        (!editor.canEdit ? '<p class="note bad">시트 공유 설정에서 LABIS 서비스 계정을 편집자로 추가해야 저장할 수 있습니다.</p>' : '') +
+        '<form id="sheetEditForm">' + editor.cells.map(function (c) {
+          var locked = !!c.reason || !editor.canEdit;
+          return '<div class="fld"><label for="sheetCell' + c.column + '">' + esc(c.label) + (c.reason ? ' · ' + esc(c.reason) : '') + '</label>' +
+            '<input id="sheetCell' + c.column + '" data-column="' + c.column + '" type="' + (!locked && (typeof c.value === 'number' || kind === 'finance' && c.column >= 2 && c.column <= 8) ? 'number" step="any' : 'text') + '" value="' + esc(c.reason ? c.display : String(c.value)) + '"' + (locked ? ' disabled' : '') + '></div>';
+        }).join('') + '<p id="sheetEditError" class="note bad" role="alert"></p><div class="btns"><button type="button" class="btn" id="sheetEditCancel">취소</button><button class="btn solid" type="submit"' + (!editor.canEdit ? ' disabled' : '') + '>시트에 저장</button></div></form>';
+      $('sheetEditCancel').onclick = closeForm;
+      $('sheetEditForm').onsubmit = function (e) {
+        e.preventDefault(); if (stale(seq) || LAB !== lab) return closeForm();
+        var changes = [];
+        editor.cells.forEach(function (c) {
+          if (c.reason) return;
+          var value = $('sheetCell' + c.column).value;
+          if (value === String(c.value)) return;
+          if ((typeof c.value === 'number' || kind === 'finance' && c.column >= 2 && c.column <= 8) && value !== '') value = Number(value);
+          if (typeof c.value === 'boolean' && /^(true|false)$/i.test(value)) value = value.toLowerCase() === 'true';
+          changes.push({ column: c.column, value: value });
+        });
+        if (!changes.length) return closeForm();
+        var button = this.querySelector('button[type="submit"]'); button.disabled = true; button.textContent = '저장 중…';
+        req(path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({revision:editor.revision,changes:changes}) }).then(function () {
+          if (stale(seq) || editorSeq !== SHEET_EDITOR_SEQ) return;
+          closeForm(); route();
+        }).catch(function (e) {
+          if (stale(seq) || editorSeq !== SHEET_EDITOR_SEQ || !$('sheetEditError')) return;
+          $('sheetEditError').textContent = e.code || e.message;
+          button.disabled = false; button.textContent = '시트에 저장';
+        });
+      };
+    }).catch(function (e) {
+      if (stale(seq) || editorSeq !== SHEET_EDITOR_SEQ || $('modalWrap').style.display === 'none') return;
+      m.innerHTML = '<h3>시트 수정</h3><p class="note bad" role="alert">' + esc(e.code || e.message) + '</p><button type="button" class="btn" id="sheetEditCancel">닫기</button>';
+      $('sheetEditCancel').onclick = closeForm;
+    });
+  }
+  function pollDashboardSheets() {
+    if (document.hidden || !$('financeSheet') || $('modalWrap').style.display === 'flex') return;
+    var focused = document.activeElement;
+    if (focused && /^(INPUT|SELECT|TEXTAREA)$/.test(focused.tagName)) return;
+    loadFinanceSheet(true); loadOperationsSheet(true);
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) pollDashboardSheets(); });
+  function loadFinanceSheet(quiet) {
+    quiet = quiet === true;
+    var box = $("financeSheet"); if (!box || FINANCE_BUSY) return;
+    FINANCE_BUSY = true;
     var seq = RENDER_SEQ;
-    box.innerHTML = '<h2>연구비 현황</h2><p role="status">불러오는 중…</p>';
-    fresh(req("/api/v1/finance-sheet?lab=" + LAB)).then(function (d) {
+    if (!quiet) box.innerHTML = '<h2>연구비 현황</h2><p role="status">불러오는 중…</p>';
+    fresh(req("/api/v1/finance-sheet?lab=" + LAB).finally(function () { if (!stale(seq)) FINANCE_BUSY = false; })).then(function (d) {
       if (!d.sheet) { setHtml("financeSheet", ""); return; }
       var s = d.sheet;
       function render(selected) {
         if (stale(seq)) return;
+        var oldSource = box.querySelector('.finance-source'), wasOpen = oldSource && oldSource.open;
+        var oldScroll = box.querySelector('.finance-scroll'), scrollTop = oldScroll ? oldScroll.scrollTop : 0;
         setHtml("financeSheet", financeDashboard(s, selected));
+        var source = box.querySelector('.finance-source'); if (source) source.open = !!wasOpen;
+        var scroll = box.querySelector('.finance-scroll'); if (scroll) scroll.scrollTop = scrollTop;
+        wireSheetEdits("financeSheet");
         var refresh = $("financeRefresh"); if (refresh) refresh.onclick = loadFinanceSheet;
         var select = $("financeProject"); if (select) select.onchange = function () { render(select.value); };
       }
-      render('');
+      if (quiet && $('modalWrap').style.display === 'flex') return;
+      render(quiet && $('financeProject') ? $('financeProject').value : '');
     }).catch(function (e) {
       if (stale(seq)) return;
+      if (['menu_forbidden','invalid_token','not_invited','lab_forbidden'].includes(e.code)) { setHtml('financeSheet', ''); return; }
+      if (quiet) { var status = $('financeSyncStatus'); if (status) status.textContent = '자동 갱신 실패 · 다음 주기에 재시도'; return; }
       if (e.code === "menu_forbidden") { setHtml("financeSheet", ""); return; }
       setHtml("financeSheet", '<h2>연구비 현황</h2><p class="note bad" role="alert">연구비 시트를 불러오지 못했습니다.</p><button class="btn sm" id="financeRetry">다시 시도</button>');
       var retry = $("financeRetry"); if (retry) retry.onclick = loadFinanceSheet;
@@ -765,30 +839,33 @@
       return (!team || t.team === team) && (!query || [t.team, t.category, t.leader, t.task, t.members.join(' '), t.resource, t.description].join(' ').toLowerCase().includes(query.toLowerCase()));
     });
     var html = '<div class="finance-heading"><h2>연구실 운영관리</h2><small>' + esc(s.title) + '</small>' +
-      '<a class="btn sm" href="' + esc(s.url) + '" target="_blank" rel="noreferrer">원본 시트 ↗</a><button class="btn sm" id="operationsRefresh">새로고침</button></div>';
+      '<a class="btn sm" href="' + esc(s.url) + '" target="_blank" rel="noreferrer">원본 시트 ↗</a><button class="btn sm" id="operationsRefresh">새로고침</button><small id="operationsSyncStatus" role="status">30초 자동 연동</small></div>';
     html += '<div class="stats">' + [['팀', teams.length + '개'], ['업무', tasks.length + '건'], ['담당자', members.size + '명'], ['담당자 미기재', tasks.filter(function (t) { return !t.members.length; }).length + '건']].map(function (p) {
       return '<div class="stat"><div class="k">' + esc(p[0]) + '</div><div class="v">' + esc(p[1]) + '</div></div>';
     }).join('') + '</div><p class="finance-caption">시트 업데이트 표기: ' + esc(s.updatedLabel || '미기재') + ' · 조회: ' + esc(new Date(s.fetchedAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })) + '</p>';
     html += '<div class="finance-toolbar"><label for="operationsTeam">팀</label><select id="operationsTeam"><option value="">전체 팀</option>' + teams.map(function (name) { return '<option' + (team === name ? ' selected' : '') + ' value="' + esc(name) + '">' + esc(name) + ' (' + tasks.filter(function (t) { return t.team === name; }).length + ')</option>'; }).join('') +
       '</select><label for="operationsQuery">업무·담당자 검색</label><input id="operationsQuery" type="search" value="' + esc(query) + '" placeholder="업무, 담당자, 자료명" style="max-width:100%"><span role="status">' + filtered.length + '건</span></div>';
-    html += '<div class="tblwrap"><table><thead><tr><th>팀 / 업무</th><th>주요업무</th><th>팀장</th><th>담당자</th><th>관리자료</th><th>내용</th><th>검토 메모 (원문)</th></tr></thead><tbody>';
+    html += '<div class="tblwrap"><table><thead><tr><th>팀 / 업무</th><th>주요업무</th><th>팀장</th><th>담당자</th><th>관리자료</th><th>내용</th><th>검토 메모 (원문)</th><th>수정</th></tr></thead><tbody>';
     filtered.forEach(function (t) {
       var resource = esc(t.resource || '—');
       if (/^https?:\/\/[^\s]+$/i.test(t.resource)) resource = '<a target="_blank" rel="noreferrer" href="' + esc(t.resource) + '">' + esc(t.resource) + ' ↗</a>';
-      html += '<tr><td>' + esc(t.team) + '<br><small>' + esc(t.category) + '</small></td><td>' + esc(t.task) + '</td><td>' + esc(t.leader || '—') + '</td><td>' + esc(t.members.join(', ') || '미기재') + '</td><td>' + resource + '</td><td>' + esc(t.description || '—') + '</td><td style="white-space:pre-line">' + esc(t.review || '—') + '</td></tr>';
+      html += '<tr><td>' + esc(t.team) + '<br><small>' + esc(t.category) + '</small></td><td>' + esc(t.task) + '</td><td>' + esc(t.leader || '—') + '</td><td>' + esc(t.members.join(', ') || '미기재') + '</td><td>' + resource + '</td><td>' + esc(t.description || '—') + '</td><td style="white-space:pre-line">' + esc(t.review || '—') + '</td><td>' + sheetEditButton('operations',t.row) + (t.memberRows || []).map(function (row) { return sheetEditButton('operations',row,'추가 담당자'); }).join('') + '</td></tr>';
     });
-    if (!filtered.length) html += '<tr><td colspan="7" class="empty-row">표시할 업무가 없습니다.</td></tr>';
+    if (!filtered.length) html += '<tr><td colspan="8" class="empty-row">표시할 업무가 없습니다.</td></tr>';
     return html + '</tbody></table></div><p class="finance-caption">담당자는 팀원 열 기준이며 빈 칸은 미기재로 표시합니다. 검토 메모는 원문 기록으로, 현재 완료 상태를 뜻하지 않습니다.</p>';
   }
-  function loadOperationsSheet() {
-    var box = $('operationsSheet'); if (!box) return;
+  function loadOperationsSheet(quiet) {
+    quiet = quiet === true;
+    var box = $('operationsSheet'); if (!box || OPERATIONS_BUSY) return;
+    OPERATIONS_BUSY = true;
     var seq = RENDER_SEQ;
-    box.innerHTML = '<h2>연구실 운영관리</h2><p role="status">불러오는 중…</p>';
-    fresh(req('/api/v1/operations-sheet?lab=' + LAB)).then(function (d) {
+    if (!quiet) box.innerHTML = '<h2>연구실 운영관리</h2><p role="status">불러오는 중…</p>';
+    fresh(req('/api/v1/operations-sheet?lab=' + LAB).finally(function () { if (!stale(seq)) OPERATIONS_BUSY = false; })).then(function (d) {
       if (!d.sheet) { setHtml('operationsSheet', ''); return; }
       function render(team, query, focusSearch) {
         if (stale(seq)) return;
         setHtml('operationsSheet', operationsDashboard(d.sheet, team, query));
+        wireSheetEdits('operationsSheet');
         $('operationsRefresh').onclick = loadOperationsSheet;
         $('operationsTeam').onchange = function () { render(this.value, $('operationsQuery').value, false); };
         var input = $('operationsQuery');
@@ -797,9 +874,12 @@
         input.oncompositionend = function () { render(team, this.value, true); };
         if (focusSearch) input.focus();
       }
-      render('', '', false);
+      if (quiet && $('modalWrap').style.display === 'flex') return;
+      render(quiet && $('operationsTeam') ? $('operationsTeam').value : '', quiet && $('operationsQuery') ? $('operationsQuery').value : '', false);
     }).catch(function (e) {
       if (stale(seq)) return;
+      if (['menu_forbidden','invalid_token','not_invited','lab_forbidden'].includes(e.code)) { setHtml('operationsSheet', ''); return; }
+      if (quiet) { var status = $('operationsSyncStatus'); if (status) status.textContent = '자동 갱신 실패 · 다음 주기에 재시도'; return; }
       if (e.code === 'menu_forbidden') { setHtml('operationsSheet', ''); return; }
       setHtml('operationsSheet', '<h2>연구실 운영관리</h2><p class="note bad" role="alert">운영관리 시트를 불러오지 못했습니다.</p><button class="btn sm" id="operationsRetry">다시 시도</button>');
       var retry = $('operationsRetry'); if (retry) retry.onclick = loadOperationsSheet;
@@ -816,6 +896,7 @@
       '<h2>진행 중 과제</h2><div id="pj"></div>';
     loadFinanceSheet();
     loadOperationsSheet();
+    DASHBOARD_POLL = setInterval(pollDashboardSheets, 30000);
     // 드라이브 폴더는 부가 정보 — 설정 전이거나 못 읽어도 대시보드는 그대로 뜬다
     fresh(req("/api/v1/drive?lab=" + LAB)).then(function (d) {
       if (!d.folder) return;
@@ -1736,6 +1817,9 @@
   function route() {
     if (!ME) return;
     RENDER_SEQ++;
+    clearInterval(DASHBOARD_POLL); DASHBOARD_POLL = null;
+    FINANCE_BUSY = OPERATIONS_BUSY = false;
+    closeForm();
     renderNav();
     var h = location.hash || "#/";
     if (h === "#/team") { location.hash = "#/settings"; return; }   // 구성원 → 설정으로 옮김
